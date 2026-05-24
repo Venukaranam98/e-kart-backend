@@ -1,31 +1,45 @@
-from fastapi import APIRouter,Query,UploadFile, File
+from fastapi import (
+    APIRouter,
+    Query,
+    UploadFile,
+    File,
+    Depends,
+    HTTPException
+)
 
 from sqlalchemy.orm import Session
 
-from fastapi import Depends
+from sqlalchemy import asc, desc
 
 from database import get_db
 
-from schemas import ProductSchema,ReviewSchema
+from schemas import (
+    ProductSchema,
+    ReviewSchema
+)
 
-from models import Product,User,Review
-
-from routers.auth import get_current_admin
-
-import shutil
-
-from sqlalchemy import asc, desc
+from models import (
+    Product,
+    User,
+    Review
+)
 
 from routers.auth import (
     get_current_admin,
     get_current_user
 )
 
+import shutil
+
 
 router = APIRouter()
 
 
-@router.post("/products")
+
+@router.post(
+    "/products",
+    tags=["Products"]
+)
 
 def create_product(
 
@@ -53,18 +67,38 @@ def create_product(
 
     )
 
-
     db.add(new_product)
 
     db.commit()
 
     db.refresh(new_product)
 
+    return {
 
-    return new_product
+        "success": True,
+
+        "message": "Product created successfully",
+
+        "data": {
+
+            "id": new_product.id,
+
+            "title": new_product.title,
+
+            "price": new_product.price,
+
+            "category": new_product.category
+
+        }
+
+    }
 
 
-@router.get("/products")
+
+@router.get(
+    "/products",
+    tags=["Products"]
+)
 
 def get_products(
 
@@ -78,7 +112,6 @@ def get_products(
 
     skip = (page - 1) * limit
 
-
     products = db.query(Product).offset(
 
         skip
@@ -89,11 +122,22 @@ def get_products(
 
     ).all()
 
+    return {
 
-    return products
+        "success": True,
+
+        "message": "Products fetched successfully",
+
+        "data": products
+
+    }
 
 
-@router.get("/products/filter")
+
+@router.get(
+    "/products/filter",
+    tags=["Products"]
+)
 
 def filter_products(
 
@@ -111,60 +155,54 @@ def filter_products(
 
     query = db.query(Product)
 
-
     if category:
 
         query = query.filter(
-
             Product.category.ilike(category)
-
         )
-
 
     if min_price is not None:
 
         query = query.filter(
-
             Product.price >= min_price
-
         )
-
 
     if max_price is not None:
 
         query = query.filter(
-
             Product.price <= max_price
-
         )
-
 
     if sort == "low_to_high":
 
         query = query.order_by(
-
             asc(Product.price)
-
         )
-
 
     elif sort == "high_to_low":
 
         query = query.order_by(
-
             desc(Product.price)
-
         )
-
 
     products = query.all()
 
+    return {
 
-    return products
+        "success": True,
+
+        "message": "Filtered products fetched successfully",
+
+        "data": products
+
+    }
 
 
 
-@router.get("/products/{product_id}")
+@router.get(
+    "/products/{product_id}",
+    tags=["Products"]
+)
 
 def get_product(
 
@@ -180,11 +218,38 @@ def get_product(
 
     ).first()
 
+    if not product:
 
-    return product
+        raise HTTPException(
+
+            status_code=404,
+
+            detail={
+
+                "success": False,
+
+                "message": "Product not found"
+
+            }
+
+        )
+
+    return {
+
+        "success": True,
+
+        "message": "Product fetched successfully",
+
+        "data": product
+
+    }
 
 
-@router.get("/products/search/")
+
+@router.get(
+    "/products/search/",
+    tags=["Products"]
+)
 
 def search_products(
 
@@ -200,11 +265,22 @@ def search_products(
 
     ).all()
 
+    return {
 
-    return products
+        "success": True,
+
+        "message": "Search results fetched successfully",
+
+        "data": products
+
+    }
 
 
-@router.get("/products/category/{category_name}")
+
+@router.get(
+    "/products/category/{category_name}",
+    tags=["Products"]
+)
 
 def get_products_by_category(
 
@@ -220,11 +296,22 @@ def get_products_by_category(
 
     ).all()
 
+    return {
 
-    return products
+        "success": True,
+
+        "message": "Category products fetched successfully",
+
+        "data": products
+
+    }
 
 
-@router.put("/products/{product_id}")
+
+@router.put(
+    "/products/{product_id}",
+    tags=["Products"]
+)
 
 def update_product(
 
@@ -246,6 +333,21 @@ def update_product(
 
     ).first()
 
+    if not product:
+
+        raise HTTPException(
+
+            status_code=404,
+
+            detail={
+
+                "success": False,
+
+                "message": "Product not found"
+
+            }
+
+        )
 
     product.title = updated_product.title
 
@@ -257,16 +359,26 @@ def update_product(
 
     product.category = updated_product.category
 
-
     db.commit()
 
     db.refresh(product)
 
+    return {
 
-    return product
+        "success": True,
+
+        "message": "Product updated successfully",
+
+        "data": product
+
+    }
 
 
-@router.delete("/products/{product_id}")
+
+@router.delete(
+    "/products/{product_id}",
+    tags=["Products"]
+)
 
 def delete_product(
 
@@ -286,24 +398,39 @@ def delete_product(
 
     ).first()
 
+    if not product:
+
+        raise HTTPException(
+
+            status_code=404,
+
+            detail={
+
+                "success": False,
+
+                "message": "Product not found"
+
+            }
+
+        )
 
     db.delete(product)
 
     db.commit()
 
-
     return {
+
+        "success": True,
 
         "message": "Product deleted successfully"
 
     }
 
+
+
 @router.post(
-
     "/upload-image",
-
     tags=["Products"]
-
 )
 
 def upload_image(
@@ -318,7 +445,6 @@ def upload_image(
 
     file_path = f"uploads/{file.filename}"
 
-
     with open(file_path, "wb") as buffer:
 
         shutil.copyfileobj(
@@ -326,19 +452,25 @@ def upload_image(
             buffer
         )
 
-
     return {
 
-        "image_url": f"/uploads/{file.filename}"
+        "success": True,
+
+        "message": "Image uploaded successfully",
+
+        "data": {
+
+            "image_url": f"/uploads/{file.filename}"
+
+        }
 
     }
 
+
+
 @router.post(
-
     "/products/{product_id}/review",
-
     tags=["Reviews"]
-
 )
 
 def add_review(
@@ -361,15 +493,21 @@ def add_review(
 
     ).first()
 
-
     if not product:
 
-        return {
+        raise HTTPException(
 
-            "message": "Product not found"
+            status_code=404,
 
-        }
+            detail={
 
+                "success": False,
+
+                "message": "Product not found"
+
+            }
+
+        )
 
     new_review = Review(
 
@@ -383,16 +521,26 @@ def add_review(
 
     )
 
-
     db.add(new_review)
 
     db.commit()
 
     db.refresh(new_review)
 
-
     return {
 
-        "message": "Review added successfully"
+        "success": True,
+
+        "message": "Review added successfully",
+
+        "data": {
+
+            "review_id": new_review.id,
+
+            "rating": new_review.rating,
+
+            "comment": new_review.comment
+
+        }
 
     }

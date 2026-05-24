@@ -1,23 +1,25 @@
-from fastapi import APIRouter, Depends
-
-from sqlalchemy.orm import Session
-
-from database import get_db
-
-from models import Cart, User
-
-from schemas import (CartSchema,UpdateCartSchema)
-
-from routers.auth import get_current_user
-
 from fastapi import (
     APIRouter,
     Depends,
     HTTPException
 )
 
+from sqlalchemy.orm import Session
+
+from database import get_db
+
+from models import Cart, User, Product
+
+from schemas import (
+    CartSchema,
+    UpdateCartSchema
+)
+
+from routers.auth import get_current_user
+
 
 router = APIRouter()
+
 
 
 @router.post(
@@ -35,12 +37,70 @@ def add_to_cart(
     db: Session = Depends(get_db),
 
     current_user: User = Depends(
-
         get_current_user
-
     )
 
 ):
+
+
+    product_exists = db.query(Product).filter(
+
+        Product.id == cart.product_id
+
+    ).first()
+
+    if not product_exists:
+
+        raise HTTPException(
+
+            status_code=404,
+
+            detail={
+
+                "success": False,
+
+                "message": "Product not found"
+
+            }
+
+        )
+
+
+    existing_cart_item = db.query(Cart).filter(
+
+        Cart.user_id == current_user.id,
+
+        Cart.product_id == cart.product_id
+
+    ).first()
+
+
+    if existing_cart_item:
+
+        existing_cart_item.quantity += cart.quantity
+
+        db.commit()
+
+        db.refresh(existing_cart_item)
+
+        return {
+
+            "success": True,
+
+            "message": "Cart quantity updated successfully",
+
+            "data": {
+
+                "cart_id": existing_cart_item.id,
+
+                "product_id": existing_cart_item.product_id,
+
+                "quantity": existing_cart_item.quantity
+
+            }
+
+        }
+
 
     new_cart_item = Cart(
 
@@ -52,19 +112,30 @@ def add_to_cart(
 
     )
 
-
     db.add(new_cart_item)
 
     db.commit()
 
     db.refresh(new_cart_item)
 
-
     return {
 
-        "message": "Product added to cart"
+        "success": True,
+
+        "message": "Product added to cart",
+
+        "data": {
+
+            "cart_id": new_cart_item.id,
+
+            "product_id": new_cart_item.product_id,
+
+            "quantity": new_cart_item.quantity
+
+        }
 
     }
+
 
 
 @router.get(
@@ -80,9 +151,7 @@ def get_user_cart(
     db: Session = Depends(get_db),
 
     current_user: User = Depends(
-
         get_current_user
-
     )
 
 ):
@@ -93,9 +162,7 @@ def get_user_cart(
 
     ).all()
 
-
     cart_response = []
-
 
     for item in cart_items:
 
@@ -115,8 +182,16 @@ def get_user_cart(
 
         })
 
+    return {
 
-    return cart_response
+        "success": True,
+
+        "message": "Cart fetched successfully",
+
+        "data": cart_response
+
+    }
+
 
 
 @router.delete(
@@ -134,9 +209,7 @@ def remove_from_cart(
     db: Session = Depends(get_db),
 
     current_user: User = Depends(
-
         get_current_user
-
     )
 
 ):
@@ -149,28 +222,34 @@ def remove_from_cart(
 
     ).first()
 
-
     if not cart_item:
 
         raise HTTPException(
 
             status_code=404,
 
-            detail="Cart item not found"
+            detail={
+
+                "success": False,
+
+                "message": "Cart item not found"
+
+            }
 
         )
-
 
     db.delete(cart_item)
 
     db.commit()
 
-
     return {
+
+        "success": True,
 
         "message": "Item removed from cart"
 
     }
+
 
 
 @router.put(
@@ -190,9 +269,7 @@ def update_cart_quantity(
     db: Session = Depends(get_db),
 
     current_user: User = Depends(
-
         get_current_user
-
     )
 
 ):
@@ -205,30 +282,40 @@ def update_cart_quantity(
 
     ).first()
 
-
     if not cart_item:
 
         raise HTTPException(
 
             status_code=404,
 
-            detail="Cart item not found"
+            detail={
+
+                "success": False,
+
+                "message": "Cart item not found"
+
+            }
 
         )
 
-
     cart_item.quantity = updated_cart.quantity
-
 
     db.commit()
 
     db.refresh(cart_item)
 
-
     return {
 
-        "message": "Cart quantity updated",
+        "success": True,
 
-        "quantity": cart_item.quantity
+        "message": "Cart quantity updated successfully",
+
+        "data": {
+
+            "cart_id": cart_item.id,
+
+            "quantity": cart_item.quantity
+
+        }
 
     }

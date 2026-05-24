@@ -10,8 +10,7 @@ from fastapi.security import (
 from database import get_db
 
 from schemas import (
-    UserSchema,
-    UserResponse
+    UserSchema
 )
 
 from models import User
@@ -35,11 +34,9 @@ oauth2_scheme = OAuth2PasswordBearer(
 )
 
 
-# REGISTER API
 
 @router.post(
     "/register",
-    response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
     tags=["Authentication"]
 )
@@ -53,19 +50,26 @@ def register(
         User.email == user.email
     ).first()
 
-
     if existing_user:
 
         raise HTTPException(
-            status_code=400,
-            detail="Email already registered"
-        )
 
+            status_code=400,
+
+            detail={
+
+                "success": False,
+
+                "message": "Email already registered",
+
+
+            }
+
+        )
 
     hashed_password = hash_password(
         user.password
     )
-
 
     new_user = User(
         username=user.username,
@@ -73,16 +77,35 @@ def register(
         password=hashed_password
     )
 
-
     db.add(new_user)
 
     db.commit()
 
     db.refresh(new_user)
 
+    access_token = create_access_token(
+        data={
+            "sub": new_user.email
+        }
+    )
 
-    return new_user
+    return {
 
+    "success": True,
+
+    "message": "Registration Successful",
+
+    "data": {
+
+        "access_token": access_token,
+
+        "token_type": "bearer"
+
+    }
+
+}
+
+    
 
 
 @router.post(
@@ -99,28 +122,44 @@ def login(
         User.email == request.username
     ).first()
 
-
     if not existing_user:
 
         raise HTTPException(
-            status_code=404,
-            detail="User not found"
-        )
 
+            status_code=404,
+
+            detail={
+
+                "success": False,
+
+                "message": "User not found",
+
+
+            }
+
+        )
 
     password_valid = verify_password(
         request.password,
         existing_user.password
     )
 
-
     if not password_valid:
 
         raise HTTPException(
-            status_code=401,
-            detail="Invalid password"
-        )
 
+            status_code=401,
+
+            detail={
+
+                "success": False,
+
+                "message": "Invalid password",
+
+
+            }
+
+        )
 
     access_token = create_access_token(
         data={
@@ -128,12 +167,23 @@ def login(
         }
     )
 
-
     return {
+
+    "success": True,
+
+    "message": "Login Successful",
+
+    "data": {
+
         "access_token": access_token,
+
         "token_type": "bearer"
+
     }
 
+}
+
+    
 
 
 def get_current_user(
@@ -143,22 +193,28 @@ def get_current_user(
 
     email = verify_access_token(token)
 
-
     if email is None:
 
         raise HTTPException(
-            status_code=401,
-            detail="Invalid token"
-        )
 
+            status_code=401,
+
+            detail={
+
+                "success": False,
+
+                "message": "Invalid Token",
+
+
+            }
+
+        )
 
     user = db.query(User).filter(
         User.email == email
     ).first()
 
-
     return user
-
 
 
 @router.get(
@@ -171,17 +227,28 @@ def get_profile(
 ):
 
     return {
-        "id": current_user.id,
-        "username": current_user.username,
-        "email": current_user.email
+
+        "success": True,
+
+        "message": "Profile fetched successfully",
+
+        "data": {
+
+            "id": current_user.id,
+
+            "username": current_user.username,
+
+            "email": current_user.email
+
+        }
+
     }
+
 
 def get_current_admin(
 
     current_user: User = Depends(
-
         get_current_user
-
     )
 
 ):
@@ -192,9 +259,49 @@ def get_current_admin(
 
             status_code=403,
 
-            detail="Not authorized"
+            detail={
+
+                "success": False,
+
+                "message": "Not authorized",
+
+
+            }
 
         )
 
-
     return current_user
+
+
+@router.get(
+    "/admin/profile",
+    tags=["Authentication"]
+)
+
+def admin_profile(
+
+    current_admin: User = Depends(
+        get_current_admin
+    )
+
+):
+
+    return {
+
+        "success": True,
+
+        "message": "Admin authorized successfully",
+
+        "data": {
+
+            "id": current_admin.id,
+
+            "username": current_admin.username,
+
+            "email": current_admin.email,
+
+            "is_admin": current_admin.is_admin
+
+        }
+
+    }
