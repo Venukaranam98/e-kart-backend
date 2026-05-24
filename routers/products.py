@@ -15,7 +15,8 @@ from database import get_db
 
 from schemas import (
     ProductSchema,
-    ReviewSchema
+    ReviewSchema,
+    ProductResponse
 )
 
 from models import (
@@ -30,10 +31,10 @@ from routers.auth import (
 )
 
 import shutil
+import uuid
 
 
 router = APIRouter()
-
 
 
 @router.post(
@@ -94,7 +95,6 @@ def create_product(
     }
 
 
-
 @router.get(
     "/products",
     tags=["Products"]
@@ -113,13 +113,9 @@ def get_products(
     skip = (page - 1) * limit
 
     products = db.query(Product).offset(
-
         skip
-
     ).limit(
-
         limit
-
     ).all()
 
     return {
@@ -128,10 +124,15 @@ def get_products(
 
         "message": "Products fetched successfully",
 
-        "data": products
+        "data": [
+
+            ProductResponse.model_validate(product)
+
+            for product in products
+
+        ]
 
     }
-
 
 
 @router.get(
@@ -193,10 +194,15 @@ def filter_products(
 
         "message": "Filtered products fetched successfully",
 
-        "data": products
+        "data": [
+
+            ProductResponse.model_validate(product)
+
+            for product in products
+
+        ]
 
     }
-
 
 
 @router.get(
@@ -213,9 +219,7 @@ def get_product(
 ):
 
     product = db.query(Product).filter(
-
         Product.id == product_id
-
     ).first()
 
     if not product:
@@ -240,10 +244,9 @@ def get_product(
 
         "message": "Product fetched successfully",
 
-        "data": product
+        "data": ProductResponse.model_validate(product)
 
     }
-
 
 
 @router.get(
@@ -271,10 +274,15 @@ def search_products(
 
         "message": "Search results fetched successfully",
 
-        "data": products
+        "data": [
+
+            ProductResponse.model_validate(product)
+
+            for product in products
+
+        ]
 
     }
-
 
 
 @router.get(
@@ -302,10 +310,15 @@ def get_products_by_category(
 
         "message": "Category products fetched successfully",
 
-        "data": products
+        "data": [
+
+            ProductResponse.model_validate(product)
+
+            for product in products
+
+        ]
 
     }
-
 
 
 @router.put(
@@ -328,9 +341,7 @@ def update_product(
 ):
 
     product = db.query(Product).filter(
-
         Product.id == product_id
-
     ).first()
 
     if not product:
@@ -350,13 +361,9 @@ def update_product(
         )
 
     product.title = updated_product.title
-
     product.description = updated_product.description
-
     product.price = updated_product.price
-
     product.image = updated_product.image
-
     product.category = updated_product.category
 
     db.commit()
@@ -369,10 +376,9 @@ def update_product(
 
         "message": "Product updated successfully",
 
-        "data": product
+        "data": ProductResponse.model_validate(product)
 
     }
-
 
 
 @router.delete(
@@ -393,9 +399,7 @@ def delete_product(
 ):
 
     product = db.query(Product).filter(
-
         Product.id == product_id
-
     ).first()
 
     if not product:
@@ -427,7 +431,6 @@ def delete_product(
     }
 
 
-
 @router.post(
     "/upload-image",
     tags=["Products"]
@@ -443,7 +446,9 @@ def upload_image(
 
 ):
 
-    file_path = f"uploads/{file.filename}"
+    unique_filename = f"{uuid.uuid4()}_{file.filename}"
+
+    file_path = f"uploads/{unique_filename}"
 
     with open(file_path, "wb") as buffer:
 
@@ -460,12 +465,11 @@ def upload_image(
 
         "data": {
 
-            "image_url": f"/uploads/{file.filename}"
+            "image_url": f"/uploads/{unique_filename}"
 
         }
 
     }
-
 
 
 @router.post(
@@ -488,9 +492,7 @@ def add_review(
 ):
 
     product = db.query(Product).filter(
-
         Product.id == product_id
-
     ).first()
 
     if not product:

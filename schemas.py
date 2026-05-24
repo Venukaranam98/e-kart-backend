@@ -36,11 +36,13 @@ class UserResponse(BaseModel):
 
         from_attributes = True
 
+
 class LoginSchema(BaseModel):
 
     email: str
 
     password: str
+
 
 class CartSchema(BaseModel):
 
@@ -48,12 +50,63 @@ class CartSchema(BaseModel):
 
     quantity: int
 
+
 class UpdateCartSchema(BaseModel):
 
     quantity: int
+
 
 class ReviewSchema(BaseModel):
 
     comment: str
 
     rating: int
+
+
+class ProductResponse(BaseModel):
+
+    id: int
+
+    title: str
+
+    description: str
+
+    price: float
+
+    image: str
+
+    category: str
+
+
+    class Config:
+
+        from_attributes = True
+
+
+class ReviewResponse(BaseModel):
+
+    id: int
+
+    comment: str
+
+    rating: int
+
+
+    class Config:
+
+        from_attributes = True
+
+
+class CartResponse(BaseModel):
+
+    cart_id: int
+
+    product_title: str
+
+    price: float
+
+    image: str
+
+    category: str
+
+    quantity: int
