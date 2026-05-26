@@ -29,7 +29,10 @@ app = FastAPI()
 
 origins = [
 
+    origins = [
+    "https://annette-nondesignate-cryptically.ngrok-free.dev",
     "http://localhost:5173",
+],
 
 ]
 
