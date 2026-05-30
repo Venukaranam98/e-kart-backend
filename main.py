@@ -18,6 +18,23 @@ import os
 
 from fastapi.middleware.cors import CORSMiddleware
 
+import razorpay
+
+from dotenv import load_dotenv
+
+from pydantic import BaseModel
+
+class OrderRequest(BaseModel):
+    amount: int
+
+load_dotenv()
+
+client = razorpay.Client(
+    auth=(
+        os.getenv("RAZORPAY_KEY_ID"),
+        os.getenv("RAZORPAY_KEY_SECRET")
+    )
+)
 
 os.makedirs(
     "uploads",
@@ -32,6 +49,8 @@ origins = [
     
     "https://annette-nondesignate-cryptically.ngrok-free.dev",
     "http://localhost:5173",
+    "http://localhost:5174",
+    "*"
 ]
 
 
@@ -77,3 +96,14 @@ def home():
         "message": "E-KART Backend Running"
 
     }
+
+@app.post("/create-order")
+def create_order(data: OrderRequest):
+
+    order = client.order.create({
+        "amount": data.amount * 100,
+        "currency": "INR",
+        "payment_capture": 1
+    })
+
+    return order

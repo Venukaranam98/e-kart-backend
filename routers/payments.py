@@ -6,6 +6,8 @@ import os
 
 from dotenv import load_dotenv
 
+from pydantic import BaseModel
+
 
 load_dotenv()
 
@@ -25,19 +27,15 @@ client = razorpay.Client(
 
 )
 
-@router.post(
+class PaymentSchema(BaseModel):
+    amount: int
 
-    "/create-payment-order",
-
-    tags=["Payments"]
-
-)
-
-def create_payment_order():
+@router.post("/create-payment-order")
+def create_payment_order(data: PaymentSchema):
 
     payment_order = client.order.create({
 
-        "amount": 50000,
+        "amount": data.amount*100,
 
         "currency": "INR",
 
