@@ -112,7 +112,6 @@ def register(
     "/login",
     tags=["Authentication"]
 )
-
 def login(
     request: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
@@ -125,18 +124,11 @@ def login(
     if not existing_user:
 
         raise HTTPException(
-
             status_code=404,
-
             detail={
-
                 "success": False,
-
                 "message": "User not found",
-
-
             }
-
         )
 
     password_valid = verify_password(
@@ -147,18 +139,11 @@ def login(
     if not password_valid:
 
         raise HTTPException(
-
             status_code=401,
-
             detail={
-
                 "success": False,
-
                 "message": "Invalid password",
-
-
             }
-
         )
 
     access_token = create_access_token(
@@ -168,20 +153,9 @@ def login(
     )
 
     return {
-
-    "success": True,
-
-    "message": "Login Successful",
-
-    "data": {
-
         "access_token": access_token,
-
         "token_type": "bearer"
-
     }
-
-}
 
     
 
@@ -304,4 +278,38 @@ def admin_profile(
 
         }
 
+    }
+
+def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
+
+    print("TOKEN RECEIVED:", token)
+
+    email = verify_access_token(token)
+
+    print("EMAIL:", email)
+
+    if email is None:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "success": False,
+                "message": "Invalid Token",
+            }
+        )
+
+    user = db.query(User).filter(
+        User.email == email
+    ).first()
+
+    return user
+
+@router.get("/test-token")
+def test_token():
+    from jwt_handler import SECRET_KEY
+
+    return {
+        "secret_key": SECRET_KEY
     }

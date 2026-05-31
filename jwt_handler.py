@@ -8,6 +8,8 @@ load_dotenv()
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
 
+print("SECRET_KEY LOADED:", SECRET_KEY)
+
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 
@@ -42,9 +44,36 @@ def verify_access_token(token: str):
             algorithms=[ALGORITHM]
         )
 
+        print("TOKEN PAYLOAD:", payload)
+
         email = payload.get("sub")
 
         return email
 
-    except:
+    except Exception as e:
+
+        print("JWT ERROR:", e)
+
+        return None
+    
+def verify_access_token(token: str):
+
+    try:
+
+        payload = jwt.decode(
+            token,
+            SECRET_KEY,
+            algorithms=[ALGORITHM]
+        )
+
+        print("PAYLOAD:", payload)
+
+        email = payload.get("sub")
+
+        return email
+
+    except Exception as e:
+
+        print("JWT ERROR:", e)
+
         return None

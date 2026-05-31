@@ -29,7 +29,8 @@ class Product(Base):
         back_populates="product"
     )
     order_items = relationship(
-    "OrderItem"
+    "OrderItem",
+     back_populates="product"
     )
     reviews = relationship(
     "Review",
@@ -40,7 +41,6 @@ class User(Base):
 
     __tablename__ = "users"
 
-
     id = Column(Integer, primary_key=True, index=True)
 
     username = Column(String, unique=True)
@@ -49,22 +49,29 @@ class User(Base):
 
     password = Column(String)
 
-
     cart_items = relationship(
         "Cart",
         back_populates="user"
     )
+
     orders = relationship(
-    "Order",
-    back_populates="user"
+        "Order",
+        back_populates="user"
     )
+
+    addresses = relationship(
+        "Address",
+        back_populates="user"
+    )
+
     is_admin = Column(
-    Boolean,
-    default=False
+        Boolean,
+        default=False
     )
+
     reviews = relationship(
-    "Review",
-    back_populates="user"
+        "Review",
+        back_populates="user"
     )
 
 
@@ -137,8 +144,8 @@ class Order(Base):
 
 
     user = relationship(
-        "User",
-        back_populates="orders"
+    "User",
+    back_populates="orders"
     )
 
 
@@ -183,9 +190,9 @@ class OrderItem(Base):
 
 
     product = relationship(
-        "Product"
+        "Product",
+        back_populates="order_items"
     )
-
 class Review(Base):
 
     __tablename__ = "reviews"
@@ -229,4 +236,36 @@ class Review(Base):
     product = relationship(
         "Product",
         back_populates="reviews"
+    )
+
+class Address(Base):
+
+    __tablename__ = "addresses"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id")
+    )
+
+    full_name = Column(String)
+
+    phone = Column(String)
+
+    address_line = Column(String)
+
+    city = Column(String)
+
+    state = Column(String)
+
+    pincode = Column(String)
+
+    user = relationship(
+        "User",
+        back_populates="addresses"
     )

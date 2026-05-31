@@ -110,3 +110,12 @@ class CartResponse(BaseModel):
     category: str
 
     quantity: int
+
+
+class AddressSchema(BaseModel):
+    full_name: str
+    phone: str
+    address_line: str
+    city: str
+    state: str
+    pincode: str
