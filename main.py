@@ -16,7 +16,6 @@ from routers import (
     payments
 )
 
-from fastapi.staticfiles import StaticFiles
 
 from routers import address
 
@@ -63,11 +62,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount(
-    "/uploads",
-    StaticFiles(directory="uploads"),
-    name="uploads"
-)
 
 app.include_router(products.router)
 app.include_router(auth.router)
