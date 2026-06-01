@@ -32,6 +32,10 @@ from routers.auth import (
 
 import shutil
 import uuid
+import os
+import cloudinary
+import cloudinary.uploader
+from dotenv import load_dotenv
 
 
 router = APIRouter()
@@ -435,42 +439,26 @@ def delete_product(
     "/upload-image",
     tags=["Products"]
 )
-
 def upload_image(
-
     file: UploadFile = File(...),
-
     current_admin: User = Depends(
         get_current_admin
     )
-
 ):
-
-    unique_filename = f"{uuid.uuid4()}_{file.filename}"
-
-    file_path = f"uploads/{unique_filename}"
-
-    with open(file_path, "wb") as buffer:
-
-        shutil.copyfileobj(
-            file.file,
-            buffer
-        )
+    result = cloudinary.uploader.upload(
+        file.file,
+        folder="ekart"
+    )
 
     return {
-
         "success": True,
-
         "message": "Image uploaded successfully",
-
         "data": {
-
-            "image_url": f"/uploads/{unique_filename}"
-
+            "image_url": result[
+                "secure_url"
+            ]
         }
-
     }
-
 
 @router.post(
     "/products/{product_id}/review",
