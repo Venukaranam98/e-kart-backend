@@ -56,24 +56,3 @@ def verify_access_token(token: str):
 
         return None
     
-def verify_access_token(token: str):
-
-    try:
-
-        payload = jwt.decode(
-            token,
-            SECRET_KEY,
-            algorithms=[ALGORITHM]
-        )
-
-        print("PAYLOAD:", payload)
-
-        email = payload.get("sub")
-
-        return email
-
-    except Exception as e:
-
-        print("JWT ERROR:", e)
-
-        return None
