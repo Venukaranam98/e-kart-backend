@@ -25,6 +25,8 @@ from jwt_handler import (
     verify_access_token
 )
 
+from redis_client import redis_client
+
 
 router = APIRouter()
 
@@ -117,17 +119,33 @@ def login(
     db: Session = Depends(get_db)
 ):
 
+    attempts_key = f"login_attempts:{request.username}"
+
+    attempts = redis_client.get(attempts_key)
+
+    if attempts and int(attempts) >= 5:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "success": False,
+                "message": "Too many failed login attempts. Try again in 15 minutes."
+            }
+        )
+
     existing_user = db.query(User).filter(
         User.email == request.username
     ).first()
 
     if not existing_user:
 
+        redis_client.incr(attempts_key)
+        redis_client.expire(attempts_key, 900)
+
         raise HTTPException(
             status_code=404,
             detail={
                 "success": False,
-                "message": "User not found",
+                "message": "User not found"
             }
         )
 
@@ -138,13 +156,20 @@ def login(
 
     if not password_valid:
 
+        redis_client.incr(attempts_key)
+        redis_client.expire(attempts_key, 900)
+
+        remaining = 5 - int(redis_client.get(attempts_key))
+
         raise HTTPException(
             status_code=401,
             detail={
                 "success": False,
-                "message": "Invalid password",
+                "message": f"Invalid password. {remaining} attempts remaining."
             }
         )
+
+    redis_client.delete(attempts_key)
 
     access_token = create_access_token(
         data={
@@ -156,7 +181,6 @@ def login(
         "access_token": access_token,
         "token_type": "bearer"
     }
-
     
 
 

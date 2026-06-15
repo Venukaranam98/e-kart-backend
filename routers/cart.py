@@ -17,6 +17,10 @@ from schemas import (
 
 from routers.auth import get_current_user
 
+import json
+
+from redis_client import redis_client
+
 
 router = APIRouter()
 
@@ -82,6 +86,9 @@ def add_to_cart(
         db.commit()
 
         db.refresh(existing_cart_item)
+        redis_client.delete(
+    f"cart:user:{current_user.id}"
+)
 
         return {
 
@@ -117,6 +124,9 @@ def add_to_cart(
     db.commit()
 
     db.refresh(new_cart_item)
+    redis_client.delete(
+    f"cart:user:{current_user.id}"
+    )
 
     return {
 
@@ -139,59 +149,52 @@ def add_to_cart(
 
 
 @router.get(
-
     "/cart",
-
     tags=["Cart"]
-
 )
-
 def get_user_cart(
-
     db: Session = Depends(get_db),
-
-    current_user: User = Depends(
-        get_current_user
-    )
-
+    current_user: User = Depends(get_current_user)
 ):
+    cache_key = f"cart:user:{current_user.id}"
+
+    cached_cart = redis_client.get(cache_key)
+
+    if cached_cart:
+        print("Cart cache hit")
+        return json.loads(cached_cart)
+
+    print("Cart cache miss")
 
     cart_items = db.query(Cart).filter(
-
         Cart.user_id == current_user.id
-
     ).all()
 
     cart_response = []
 
     for item in cart_items:
-
         cart_response.append({
-
             "cart_id": item.id,
-
             "product_title": item.product.title,
-
             "price": item.product.price,
-
             "image": item.product.image,
-
             "category": item.product.category,
-
             "quantity": item.quantity
-
         })
 
-    return {
-
+    response = {
         "success": True,
-
         "message": "Cart fetched successfully",
-
         "data": cart_response
-
     }
 
+    redis_client.set(
+        cache_key,
+        json.dumps(response),
+        ex=3600
+    )
+
+    return response
 
 
 @router.delete(
@@ -241,6 +244,9 @@ def remove_from_cart(
     db.delete(cart_item)
 
     db.commit()
+    redis_client.delete(
+    f"cart:user:{current_user.id}"
+    )
 
     return {
 
@@ -303,6 +309,9 @@ def update_cart_quantity(
     db.commit()
 
     db.refresh(cart_item)
+    redis_client.delete(
+    f"cart:user:{current_user.id}"
+    )
 
     return {
 

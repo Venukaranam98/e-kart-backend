@@ -227,7 +227,8 @@ def filter_products(
 )
 def get_product(
     product_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     cache_key = f"product:{product_id}"
 
@@ -251,6 +252,29 @@ def get_product(
                 "message": "Product not found"
             }
         )
+    recent_key = f"recent:user:{current_user.id}"
+
+    redis_client.lrem(
+        recent_key,
+        0,
+        product_id
+    )
+
+    redis_client.lpush(
+        recent_key,
+        product_id
+    )
+
+    redis_client.ltrim(
+        recent_key,
+        0,
+        9
+    )
+
+    redis_client.expire(
+        recent_key,
+        604800
+    )
 
     response = {
         "success": True,
@@ -265,6 +289,47 @@ def get_product(
     )
 
     return response
+
+@router.get(
+    "/products/recent/viewed",
+    tags=["Products"]
+)
+def get_recently_viewed_products(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    recent_key = f"recent:user:{current_user.id}"
+
+    product_ids = redis_client.lrange(
+        recent_key,
+        0,
+        -1
+    )
+
+    products = db.query(Product).filter(
+        Product.id.in_(product_ids)
+    ).all()
+
+    product_map = {
+        str(product.id): product
+        for product in products
+    }
+
+    ordered_products = []
+
+    for product_id in product_ids:
+        product = product_map.get(product_id)
+
+        if product:
+            ordered_products.append(
+                ProductResponse.model_validate(product)
+            )
+
+    return {
+        "success": True,
+        "message": "Recently viewed products fetched successfully",
+        "data": ordered_products
+    }
 
 @router.get(
     "/products/search/",
