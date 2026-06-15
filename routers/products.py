@@ -36,6 +36,9 @@ import os
 import cloudinary
 import cloudinary.uploader
 from dotenv import load_dotenv
+import json
+
+from redis_client import redis_client
 
 
 router = APIRouter()
@@ -77,6 +80,11 @@ def create_product(
     db.commit()
 
     db.refresh(new_product)
+    for key in redis_client.scan_iter("product:*"):
+        redis_client.delete(key)
+
+    for key in redis_client.scan_iter("products:*"):
+        redis_client.delete(key)
 
     return {
 
@@ -103,16 +111,20 @@ def create_product(
     "/products",
     tags=["Products"]
 )
-
 def get_products(
-
     page: int = 1,
-
     limit: int = 5,
-
     db: Session = Depends(get_db)
-
 ):
+    cache_key = f"products:page:{page}:limit:{limit}"
+
+    cached_products = redis_client.get(cache_key)
+
+    if cached_products:
+        print("Cache hit")
+        return json.loads(cached_products)
+
+    print("Cache miss")
 
     skip = (page - 1) * limit
 
@@ -122,22 +134,22 @@ def get_products(
         limit
     ).all()
 
-    return {
-
+    response = {
         "success": True,
-
         "message": "Products fetched successfully",
-
         "data": [
-
-            ProductResponse.model_validate(product)
-
+            ProductResponse.model_validate(product).model_dump()
             for product in products
-
         ]
-
     }
 
+    redis_client.set(
+        cache_key,
+        json.dumps(response),
+        ex=3600
+    )
+
+    return response
 
 @router.get(
     "/products/filter",
@@ -213,45 +225,46 @@ def filter_products(
     "/products/{product_id}",
     tags=["Products"]
 )
-
 def get_product(
-
     product_id: int,
-
     db: Session = Depends(get_db)
-
 ):
+    cache_key = f"product:{product_id}"
+
+    cached_product = redis_client.get(cache_key)
+
+    if cached_product:
+        print("Product cache hit")
+        return json.loads(cached_product)
+
+    print("Product cache miss")
 
     product = db.query(Product).filter(
         Product.id == product_id
     ).first()
 
     if not product:
-
         raise HTTPException(
-
             status_code=404,
-
             detail={
-
                 "success": False,
-
                 "message": "Product not found"
-
             }
-
         )
 
-    return {
-
+    response = {
         "success": True,
-
         "message": "Product fetched successfully",
-
-        "data": ProductResponse.model_validate(product)
-
+        "data": ProductResponse.model_validate(product).model_dump()
     }
 
+    redis_client.set(
+        cache_key,
+        json.dumps(response),
+        ex=3600
+    )
+
+    return response
 
 @router.get(
     "/products/search/",
@@ -373,6 +386,11 @@ def update_product(
     db.commit()
 
     db.refresh(product)
+    for key in redis_client.scan_iter("product:*"):
+        redis_client.delete(key)
+
+    for key in redis_client.scan_iter("products:*"):
+        redis_client.delete(key)
 
     return {
 
@@ -425,6 +443,12 @@ def delete_product(
     db.delete(product)
 
     db.commit()
+
+    for key in redis_client.scan_iter("product:*"):
+        redis_client.delete(key)
+
+    for key in redis_client.scan_iter("products:*"):
+        redis_client.delete(key)
 
     return {
 

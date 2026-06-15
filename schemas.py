@@ -119,3 +119,8 @@ class AddressSchema(BaseModel):
     city: str
     state: str
     pincode: str
+
+class AdminDashboardResponse(BaseModel):
+    total_users: int
+    total_products: int
+    total_orders: int

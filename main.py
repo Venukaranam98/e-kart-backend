@@ -8,6 +8,8 @@ from database import get_db
 
 import models
 
+from routers import admin
+
 from routers import (
     products,
     auth,
@@ -69,6 +71,7 @@ app.include_router(cart.router)
 app.include_router(orders.router)
 app.include_router(payments.router)
 app.include_router(address.router)
+app.include_router(admin.router)
 
 models.Base.metadata.create_all(bind=engine)
 
