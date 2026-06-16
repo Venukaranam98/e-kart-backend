@@ -221,15 +221,19 @@ def filter_products(
     }
 
 
-@router.get(
-    "/products/{product_id}",
-    tags=["Products"]
-)
+@router.get("/products/{product_id}")
 def get_product(
     product_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    recent_key = f"recent:user:{current_user.id}"
+
+    redis_client.lrem(recent_key, 0, str(product_id))
+    redis_client.lpush(recent_key, str(product_id))
+    redis_client.ltrim(recent_key, 0, 9)
+    redis_client.expire(recent_key, 604800)
+
     cache_key = f"product:{product_id}"
 
     cached_product = redis_client.get(cache_key)
@@ -237,8 +241,6 @@ def get_product(
     if cached_product:
         print("Product cache hit")
         return json.loads(cached_product)
-
-    print("Product cache miss")
 
     product = db.query(Product).filter(
         Product.id == product_id
@@ -252,29 +254,6 @@ def get_product(
                 "message": "Product not found"
             }
         )
-    recent_key = f"recent:user:{current_user.id}"
-
-    redis_client.lrem(
-        recent_key,
-        0,
-        product_id
-    )
-
-    redis_client.lpush(
-        recent_key,
-        product_id
-    )
-
-    redis_client.ltrim(
-        recent_key,
-        0,
-        9
-    )
-
-    redis_client.expire(
-        recent_key,
-        604800
-    )
 
     response = {
         "success": True,
