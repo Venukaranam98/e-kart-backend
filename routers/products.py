@@ -261,6 +261,43 @@ def get_product(
 
     return response
 
+@router.post(
+    "/products/{product_id}/view",
+    tags=["Products"]
+)
+def track_product_view(
+    product_id: int,
+    current_user: User = Depends(get_current_user)
+):
+    recent_key = f"recent:user:{current_user.id}"
+
+    redis_client.lrem(
+        recent_key,
+        0,
+        str(product_id)
+    )
+
+    redis_client.lpush(
+        recent_key,
+        str(product_id)
+    )
+
+    redis_client.ltrim(
+        recent_key,
+        0,
+        9
+    )
+
+    redis_client.expire(
+        recent_key,
+        604800
+    )
+
+    return {
+        "success": True,
+        "message": "Product view tracked"
+    }
+
 @router.get(
     "/products/recent/viewed",
     tags=["Products"]
