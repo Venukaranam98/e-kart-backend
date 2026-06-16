@@ -49,12 +49,10 @@ client = razorpay.Client(
 app = FastAPI()
 
 origins = [
-    "https://annette-nondesignate-cryptically.ngrok-free.dev",
     "http://localhost:5173",
     "http://localhost:5174",
-    "*"
+    "https://e-kart-one.vercel.app"
 ]
-
 
 app.add_middleware(
     CORSMiddleware,
@@ -63,7 +61,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 app.include_router(products.router)
 app.include_router(auth.router)
