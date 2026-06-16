@@ -3,5 +3,6 @@ import redis
 
 redis_client = redis.from_url(
     os.getenv("REDIS_URL"),
-    decode_responses=True
+    decode_responses=True,
+    ssl_cert_reqs=None
 )
