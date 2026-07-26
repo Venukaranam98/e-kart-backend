@@ -10,15 +10,6 @@ import models
 
 from routers import admin
 
-from routers import (
-    products,
-    auth,
-    cart,
-    orders,
-    payments
-)
-
-
 from routers import address
 
 import os
@@ -32,6 +23,16 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 
 from models import User
+
+from routers import (
+    products,
+    auth,
+    cart,
+    orders,
+    payments,
+    address,
+    wishlist
+)
 
 load_dotenv()
 
@@ -69,6 +70,7 @@ app.include_router(orders.router)
 app.include_router(payments.router)
 app.include_router(address.router)
 app.include_router(admin.router)
+app.include_router(wishlist.router)
 
 models.Base.metadata.create_all(bind=engine)
 

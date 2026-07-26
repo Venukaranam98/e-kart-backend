@@ -36,6 +36,10 @@ class Product(Base):
     "Review",
     back_populates="product"
     )
+    wishlist_items = relationship(
+    "Wishlist",
+    back_populates="product"
+)
 
 class User(Base):
 
@@ -73,6 +77,11 @@ class User(Base):
         "Review",
         back_populates="user"
     )
+
+    wishlist_items = relationship(
+    "Wishlist",
+    back_populates="user"
+)
 
 
 class Cart(Base):
@@ -268,4 +277,39 @@ class Address(Base):
     user = relationship(
         "User",
         back_populates="addresses"
+    )
+
+class Wishlist(Base):
+
+    __tablename__ = "wishlist"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id")
+    )
+
+    product_id = Column(
+        Integer,
+        ForeignKey("products.id")
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    user = relationship(
+        "User",
+        back_populates="wishlist_items"
+    )
+
+    product = relationship(
+        "Product",
+        back_populates="wishlist_items"
     )

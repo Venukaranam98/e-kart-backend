@@ -128,3 +128,19 @@ class AdminDashboardResponse(BaseModel):
 class CartItemSchema(BaseModel):
     product_id: int
     quantity: int
+
+class WishlistSchema(BaseModel):
+
+    product_id: int
+
+class WishlistResponse(BaseModel):
+
+    wishlist_id: int
+
+    product_title: str
+
+    price: float
+
+    image: str
+
+    category: str
