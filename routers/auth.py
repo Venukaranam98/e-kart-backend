@@ -114,6 +114,10 @@ def register(
     "/login",
     tags=["Authentication"]
 )
+@router.post(
+    "/auth/login",
+    tags=["Authentication"]
+)
 def login(
     request: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
@@ -183,6 +187,16 @@ def login(
     }
     
 
+@router.post(
+    "/auth/logout",
+    tags=["Authentication"]
+)
+def logout():
+    return {
+        "success": True,
+        "message": "Logged out successfully"
+    }
+    
 
 def get_current_user(
     token: str = Depends(oauth2_scheme),
@@ -219,7 +233,10 @@ def get_current_user(
     "/profile",
     tags=["Authentication"]
 )
-
+@router.get(
+    "/auth/me",
+    tags=["Authentication"]
+)
 def get_profile(
     current_user: User = Depends(get_current_user)
 ):
@@ -303,32 +320,6 @@ def admin_profile(
         }
 
     }
-
-def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db)
-):
-
-    print("TOKEN RECEIVED:", token)
-
-    email = verify_access_token(token)
-
-    print("EMAIL:", email)
-
-    if email is None:
-        raise HTTPException(
-            status_code=401,
-            detail={
-                "success": False,
-                "message": "Invalid Token",
-            }
-        )
-
-    user = db.query(User).filter(
-        User.email == email
-    ).first()
-
-    return user
 
 @router.get("/test-token")
 def test_token():
