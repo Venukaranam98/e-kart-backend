@@ -240,4 +240,62 @@ def remove_from_wishlist(
         "message": "Product removed from wishlist"
 
     }
+
+
+@router.delete(
+    "/wishlist",
+    tags=["Wishlist"]
+)
+def clear_user_wishlist(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    db.query(Wishlist).filter(
+        Wishlist.user_id == current_user.id
+    ).delete(synchronize_session=False)
+    db.commit()
+
+    cache_key = f"wishlist:user:{current_user.id}"
+    redis_client.delete(cache_key)
+
+    return {
+        "success": True,
+        "message": "Wishlist cleared successfully"
+    }
+
+
+@router.delete(
+    "/wishlist/product/{product_id}",
+    tags=["Wishlist"]
+)
+def remove_from_wishlist_by_product_id(
+    product_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    wishlist_item = db.query(Wishlist).filter(
+        Wishlist.product_id == product_id,
+        Wishlist.user_id == current_user.id
+    ).first()
+
+    if not wishlist_item:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "success": False,
+                "message": "Wishlist item not found"
+            }
+        )
+
+    db.delete(wishlist_item)
+    db.commit()
+
+    cache_key = f"wishlist:user:{current_user.id}"
+    redis_client.delete(cache_key)
+
+    return {
+        "success": True,
+        "message": "Product removed from wishlist"
+    }
+
     
