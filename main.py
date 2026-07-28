@@ -53,6 +53,7 @@ origins = [
     "http://localhost:5173",
     "http://localhost:5174",
     "https://e-kart-one.vercel.app"
+    "https://ekart-admin-panel.pages.dev"
 ]
 
 app.add_middleware(
