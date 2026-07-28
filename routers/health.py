@@ -13,7 +13,7 @@ router = APIRouter(tags=["Health Check"])
 START_TIME = time.time()
 
 
-@router.get("/health", summary="Health Check Endpoint")
+@router.api_route("/health", methods=["GET", "HEAD"], summary="Health Check Endpoint")
 def health_check(db: Session = Depends(get_db)):
     """
     Production health check endpoint.
