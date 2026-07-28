@@ -198,6 +198,29 @@ def get_user_cart(
 
 
 @router.delete(
+    "/cart/clear",
+    tags=["Cart"]
+)
+def clear_user_cart(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    db.query(Cart).filter(Cart.user_id == current_user.id).delete(synchronize_session=False)
+    db.commit()
+
+    try:
+        redis_client.delete(f"cart:user:{current_user.id}")
+    except Exception as e:
+        print("Redis cache delete error:", e)
+
+    return {
+        "success": True,
+        "message": "Cart cleared successfully",
+        "data": []
+    }
+
+
+@router.delete(
 
     "/cart/{cart_id}",
 

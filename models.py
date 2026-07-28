@@ -139,6 +139,11 @@ class Order(Base):
         Float
     )
 
+    status = Column(
+        String,
+        default="PROCESSING"
+    )
+
 
     created_at = Column(
         DateTime,
