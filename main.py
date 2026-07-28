@@ -31,7 +31,8 @@ from routers import (
     orders,
     payments,
     address,
-    wishlist
+    wishlist,
+    health
 )
 
 load_dotenv()
@@ -65,6 +66,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(health.router)
 app.include_router(products.router)
 app.include_router(auth.router)
 app.include_router(cart.router)
