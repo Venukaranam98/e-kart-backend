@@ -163,7 +163,8 @@ def login(
         redis_client.incr(attempts_key)
         redis_client.expire(attempts_key, 900)
 
-        remaining = 5 - int(redis_client.get(attempts_key))
+        curr_attempts = redis_client.get(attempts_key)
+        remaining = 5 - (int(curr_attempts) if curr_attempts else 1)
 
         raise HTTPException(
             status_code=401,
