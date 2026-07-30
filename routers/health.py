@@ -20,7 +20,7 @@ def health_check(db: Session = Depends(get_db)):
     Performs a lightweight 'SELECT 1' query to verify PostgreSQL database connectivity.
     """
     try:
-        # Perform lightweight DB ping
+    
         db.execute(text("SELECT 1"))
 
         uptime_seconds = round(time.time() - START_TIME, 2)
