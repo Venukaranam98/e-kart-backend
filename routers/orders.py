@@ -44,7 +44,7 @@ def checkout(
 
 
     if not cart_items:
-        # Fallback to first available product in DB if cart was empty
+        
         from models import Product
         default_prod = db.query(Product).first()
         if default_prod:
