@@ -1,5 +1,6 @@
 import os
 import logging
+import socket
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -14,6 +15,36 @@ logger = logging.getLogger(__name__)
 # Locate templates directory relative to backend
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
+
+class IPv4SMTP(smtplib.SMTP):
+    """SMTP subclass forcing IPv4 (AF_INET) resolution to bypass IPv6 network routing limitations on Linux hosting platforms like Render."""
+    def _get_socket(self, host, port, timeout):
+        infos = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+        last_err = None
+        for res in infos:
+            af, socktype, proto, canonname, sa = res
+            sock = None
+            try:
+                sock = socket.socket(af, socktype, proto)
+                if timeout is not None and timeout != socket._GLOBAL_DEFAULT_TIMEOUT:
+                    sock.settimeout(timeout)
+                if self.source_address:
+                    sock.bind(self.source_address)
+                sock.connect(sa)
+                return sock
+            except Exception as e:
+                last_err = e
+                if sock is not None:
+                    sock.close()
+        if last_err:
+            raise last_err
+        raise socket.error(f"No IPv4 address found for host {host}")
+
+class IPv4SMTP_SSL(smtplib.SMTP_SSL):
+    """SMTP_SSL subclass forcing IPv4 (AF_INET) resolution."""
+    def _get_socket(self, host, port, timeout):
+        sock = IPv4SMTP._get_socket(self, host, port, timeout)
+        return self.context.wrap_socket(sock, server_hostname=self._host)
 
 class EmailService:
     def __init__(self):
@@ -47,7 +78,6 @@ class EmailService:
     def from_name(self):
         return os.getenv("SMTP_FROM_NAME", "EKARTHUB")
 
-
     def render_template(self, template_name: str, context: dict) -> str:
         """Render Jinja2 template with context merged with defaults."""
         full_context = {
@@ -58,10 +88,26 @@ class EmailService:
         template = self.jinja_env.get_template(template_name)
         return template.render(full_context)
 
+    def _dispatch_via_smtp(self, msg: MIMEMultipart, to_email: str, port: int) -> bool:
+        if port == 465:
+            with IPv4SMTP_SSL(self.smtp_host, port, timeout=15) as server:
+                logger.info("[SMTP Connection Established SSL IPv4] Authenticating...")
+                server.login(self.smtp_user, self.smtp_password)
+                logger.info("[SMTP Authenticated] Sending message...")
+                server.sendmail(self.from_email, [to_email], msg.as_string())
+        else:
+            with IPv4SMTP(self.smtp_host, port, timeout=15) as server:
+                logger.info(f"[SMTP Connection Established IPv4 Port {port}] Initiating STARTTLS...")
+                server.starttls()
+                logger.info("[SMTP TLS Established] Authenticating...")
+                server.login(self.smtp_user, self.smtp_password)
+                logger.info("[SMTP Authenticated] Sending message...")
+                server.sendmail(self.from_email, [to_email], msg.as_string())
+        return True
+
     def send_email(self, to_email: str, subject: str, template_name: str, context: dict) -> bool:
         """
-        Renders template and dispatches email via SMTP.
-        Returns True on success, raises Exception on failure so Celery can retry.
+        Renders template and dispatches email via IPv4 SMTP with port fallback.
         """
         logger.info(f"[EmailService Rendering] Preparing email '{subject}' for '{to_email}' using template '{template_name}'")
         html_content = self.render_template(template_name, context)
@@ -77,34 +123,26 @@ class EmailService:
         if not self.smtp_user or not self.smtp_password:
             error_msg = (
                 f"[EmailService Error] SMTP credentials missing! "
-                f"Please set SMTP_USERNAME/SMTP_USER and SMTP_PASSWORD in .env. "
-                f"Email subject='{subject}' to '{to_email}' could not be dispatched."
+                f"Please set SMTP_USERNAME/SMTP_USER and SMTP_PASSWORD in .env."
             )
             logger.error(error_msg)
             raise ValueError(error_msg)
 
+        primary_port = self.smtp_port
         try:
-            logger.info(f"[SMTP Connecting] Host: {self.smtp_host}, Port: {self.smtp_port}, User: {self.smtp_user}")
-            if self.smtp_port == 465:
-                with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port, timeout=15) as server:
-                    logger.info("[SMTP Connection Established SSL] Authenticating...")
-                    server.login(self.smtp_user, self.smtp_password)
-                    logger.info("[SMTP Authenticated] Sending message...")
-                    server.sendmail(self.from_email, [to_email], msg.as_string())
-            else:
-                with smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=15) as server:
-                    logger.info("[SMTP Connection Established] Initiating STARTTLS...")
-                    server.starttls()
-                    logger.info("[SMTP TLS Established] Authenticating...")
-                    server.login(self.smtp_user, self.smtp_password)
-                    logger.info("[SMTP Authenticated] Sending message...")
-                    server.sendmail(self.from_email, [to_email], msg.as_string())
-
-            logger.info(f"[Email Delivered] Email '{subject}' successfully sent to '{to_email}'")
+            logger.info(f"[SMTP Connecting IPv4] Host: {self.smtp_host}, Port: {primary_port}, User: {self.smtp_user}")
+            self._dispatch_via_smtp(msg, to_email, primary_port)
+            logger.info(f"[Email Delivered] Email '{subject}' successfully sent to '{to_email}' via Port {primary_port}")
             return True
-        except Exception as e:
-            logger.error(f"[SMTP Error] Failed to send email '{subject}' to '{to_email}': {e}", exc_info=True)
-            raise e
+        except Exception as primary_exc:
+            fallback_port = 465 if primary_port != 465 else 587
+            logger.warning(f"[SMTP Primary Port {primary_port} Error] {primary_exc}. Attempting fallback port {fallback_port}...")
+            try:
+                self._dispatch_via_smtp(msg, to_email, fallback_port)
+                logger.info(f"[Email Delivered Fallback] Email '{subject}' sent to '{to_email}' via Port {fallback_port}")
+                return True
+            except Exception as fallback_exc:
+                logger.error(f"[SMTP Fallback Error] Port {fallback_port} also failed: {fallback_exc}", exc_info=True)
+                raise primary_exc
 
 email_service = EmailService()
-

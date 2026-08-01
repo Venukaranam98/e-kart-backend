@@ -14,20 +14,19 @@ ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@ekarthub.com")
 
 def dispatch_email_task(task_func, *args, **kwargs):
     """
-    Dispatches an email task.
-    First attempts Celery delay(), and also triggers a background thread fallback
-    so emails send reliably even if a dedicated Celery worker is not running on Render.
+    Dispatches an email task asynchronously in a background thread
+    so HTTP API requests return instantly without waiting for Celery/Upstash network latency.
     """
-    try:
-        task_func.delay(*args, **kwargs)
-    except Exception as e:
-        logger.warning(f"[Celery Dispatch Exception] {e}. Using background thread fallback.")
-    
     def _run_task():
         try:
             task_func.run(*args, **kwargs)
         except Exception as err:
             logger.error(f"[Background Thread Email Error] {err}")
+
+        try:
+            task_func.delay(*args, **kwargs)
+        except Exception as e:
+            logger.debug(f"[Celery Dispatch Exception] {e}")
 
     threading.Thread(target=_run_task, daemon=True).start()
 
