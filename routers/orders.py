@@ -97,7 +97,6 @@ def checkout(
 
     db.commit()
 
-    # Atomically delete all cart items for current_user
     from models import Cart
     db.query(Cart).filter(Cart.user_id == current_user.id).delete(synchronize_session=False)
     db.commit()
