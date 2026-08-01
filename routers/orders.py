@@ -150,17 +150,13 @@ def get_user_orders(
 
 
         for item in order.items:
-
+            current_prod = item.product
             items.append({
-
-                "product_title": item.product.title,
-
-                "price": item.product.price,
-
-                "image": item.product.image,
-
+                "product_id": item.product_id,
+                "product_title": current_prod.title if current_prod else "Product",
+                "price": current_prod.price if current_prod else 0,
+                "image": current_prod.image if current_prod else None,
                 "quantity": item.quantity
-
             })
 
 

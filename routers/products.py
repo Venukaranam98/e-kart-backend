@@ -128,7 +128,9 @@ def get_products(
 
     skip = (page - 1) * limit
 
-    products = db.query(Product).offset(
+    products = db.query(Product).order_by(
+        asc(Product.id)
+    ).offset(
         skip
     ).limit(
         limit
@@ -193,13 +195,21 @@ def filter_products(
     if sort == "low_to_high":
 
         query = query.order_by(
-            asc(Product.price)
+            asc(Product.price),
+            asc(Product.id)
         )
 
     elif sort == "high_to_low":
 
         query = query.order_by(
-            desc(Product.price)
+            desc(Product.price),
+            asc(Product.id)
+        )
+
+    else:
+
+        query = query.order_by(
+            asc(Product.id)
         )
 
     products = query.all()
@@ -356,6 +366,8 @@ def search_products(
 
         Product.title.ilike(f"%{query}%")
 
+    ).order_by(
+        asc(Product.id)
     ).all()
 
     return {
@@ -392,6 +404,8 @@ def get_products_by_category(
 
         Product.category.ilike(category_name)
 
+    ).order_by(
+        asc(Product.id)
     ).all()
 
     return {
@@ -459,11 +473,14 @@ def update_product(
     db.commit()
 
     db.refresh(product)
-    for key in redis_client.scan_iter("product:*"):
-        redis_client.delete(key)
+    try:
+        for key in redis_client.scan_iter("product:*"):
+            redis_client.delete(key)
 
-    for key in redis_client.scan_iter("products:*"):
-        redis_client.delete(key)
+        for key in redis_client.scan_iter("products:*"):
+            redis_client.delete(key)
+    except Exception as e:
+        print("Redis cache clear warning:", e)
 
     return {
 
