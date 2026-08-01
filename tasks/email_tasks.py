@@ -15,18 +15,13 @@ ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@ekarthub.com")
 def dispatch_email_task(task_func, *args, **kwargs):
     """
     Dispatches an email task asynchronously in a background thread
-    so HTTP API requests return instantly without waiting for Celery/Upstash network latency.
+    so HTTP API requests return instantly without network latency.
     """
     def _run_task():
         try:
             task_func.run(*args, **kwargs)
         except Exception as err:
             logger.error(f"[Background Thread Email Error] {err}")
-
-        try:
-            task_func.delay(*args, **kwargs)
-        except Exception as e:
-            logger.debug(f"[Celery Dispatch Exception] {e}")
 
     threading.Thread(target=_run_task, daemon=True).start()
 
