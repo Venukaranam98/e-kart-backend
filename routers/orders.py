@@ -17,7 +17,8 @@ from tasks.email_tasks import (
     send_out_for_delivery,
     send_order_delivered,
     send_order_cancelled,
-    send_low_stock_alert
+    send_low_stock_alert,
+    dispatch_email_task
 )
 
 LOW_STOCK_THRESHOLD = int(os.getenv("LOW_STOCK_THRESHOLD", "5"))
@@ -77,7 +78,7 @@ def checkout(
             db.commit()
             if prod.stock < LOW_STOCK_THRESHOLD:
                 try:
-                    send_low_stock_alert.delay(prod.id, prod.title, prod.stock)
+                    dispatch_email_task(send_low_stock_alert, prod.id, prod.title, prod.stock)
                 except Exception as e:
                     print("[Low Stock Alert Warning]:", e)
 
@@ -94,7 +95,7 @@ def checkout(
 
     # Queue order confirmation email asynchronously
     try:
-        send_order_confirmation.delay(new_order.id)
+        dispatch_email_task(send_order_confirmation, new_order.id)
     except Exception as e:
         print("[Order Confirmation Email Queue Warning]:", e)
 

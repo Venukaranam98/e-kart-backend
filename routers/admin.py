@@ -12,7 +12,8 @@ from tasks.email_tasks import (
     send_order_shipped,
     send_out_for_delivery,
     send_order_delivered,
-    send_order_cancelled
+    send_order_cancelled,
+    dispatch_email_task
 )
 
 router = APIRouter(
@@ -100,16 +101,16 @@ def update_admin_order_status(
     order.status = upper_status
     db.commit()
 
-    # Trigger corresponding status email tasks via Celery
+    # Trigger corresponding status email tasks
     try:
         if upper_status == "SHIPPED":
-            send_order_shipped.delay(order.id)
+            dispatch_email_task(send_order_shipped, order.id)
         elif upper_status == "OUT_FOR_DELIVERY":
-            send_out_for_delivery.delay(order.id)
+            dispatch_email_task(send_out_for_delivery, order.id)
         elif upper_status == "DELIVERED":
-            send_order_delivered.delay(order.id)
+            dispatch_email_task(send_order_delivered, order.id)
         elif upper_status == "CANCELLED":
-            send_order_cancelled.delay(order.id)
+            dispatch_email_task(send_order_cancelled, order.id)
     except Exception as e:
         print("[Admin Order Status Email Warning]:", e)
 

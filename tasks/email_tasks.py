@@ -6,9 +6,30 @@ from services.email_service import email_service
 from database import SessionLocal
 from models import User, Order, Address
 
+import threading
+
 logger = logging.getLogger(__name__)
 
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@ekarthub.com")
+
+def dispatch_email_task(task_func, *args, **kwargs):
+    """
+    Dispatches an email task.
+    First attempts Celery delay(), and also triggers a background thread fallback
+    so emails send reliably even if a dedicated Celery worker is not running on Render.
+    """
+    try:
+        task_func.delay(*args, **kwargs)
+    except Exception as e:
+        logger.warning(f"[Celery Dispatch Exception] {e}. Using background thread fallback.")
+    
+    def _run_task():
+        try:
+            task_func.run(None, *args, **kwargs)
+        except Exception as err:
+            logger.error(f"[Background Thread Email Error] {err}")
+
+    threading.Thread(target=_run_task, daemon=True).start()
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60, autoretry_for=(Exception,), retry_backoff=True)
 def send_welcome_email(self, user_id: int, email: str, username: str, created_at: str = None):

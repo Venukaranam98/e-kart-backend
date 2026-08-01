@@ -37,7 +37,8 @@ from tasks.email_tasks import (
     send_welcome_email,
     send_login_alert,
     send_password_reset,
-    send_password_changed
+    send_password_changed,
+    dispatch_email_task
 )
 
 
@@ -101,7 +102,8 @@ def register(
     # Queue welcome email asynchronously via Celery
     try:
         created_at_str = new_user.created_at.strftime("%Y-%m-%d %H:%M:%S UTC") if getattr(new_user, "created_at", None) else datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
-        send_welcome_email.delay(
+        dispatch_email_task(
+            send_welcome_email,
             new_user.id,
             new_user.email,
             new_user.username,
@@ -215,7 +217,8 @@ def login(
             browser = "Safari Browser"
 
         login_time_str = datetime.utcnow().strftime("%B %d, %Y at %H:%M UTC")
-        send_login_alert.delay(
+        dispatch_email_task(
+            send_login_alert,
             existing_user.id,
             existing_user.email,
             existing_user.username,
@@ -271,14 +274,14 @@ def forgot_password(
         logger.info(f"[Token Generated & Stored] User ID: {user.id} | Token generated, expires at: {expires_at}")
 
         try:
-            task = send_password_reset.delay(
+            dispatch_email_task(
+                send_password_reset,
                 user.id,
                 user.email,
                 user.username,
                 token,
                 15
             )
-            logger.info(f"[Celery Task Queued] send_password_reset | User ID: {user.id} | Email: {user.email} | Celery Task ID: {task.id}")
         except Exception as e:
             logger.error(f"[Forgot Password Email Queue Failed] Failed to queue send_password_reset task for email {user.email}: {e}", exc_info=True)
     else:
@@ -332,7 +335,8 @@ def reset_password(
     # Queue password changed confirmation email
     try:
         change_time_str = datetime.utcnow().strftime("%B %d, %Y at %H:%M UTC")
-        send_password_changed.delay(
+        dispatch_email_task(
+            send_password_changed,
             user.id,
             user.email,
             user.username,
