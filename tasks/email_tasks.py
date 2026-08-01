@@ -25,7 +25,7 @@ def dispatch_email_task(task_func, *args, **kwargs):
     
     def _run_task():
         try:
-            task_func.run(None, *args, **kwargs)
+            task_func.run(*args, **kwargs)
         except Exception as err:
             logger.error(f"[Background Thread Email Error] {err}")
 
