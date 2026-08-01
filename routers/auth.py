@@ -1,6 +1,10 @@
-from fastapi import APIRouter, HTTPException, status, Depends
-
+import logging
+from fastapi import APIRouter, HTTPException, status, Depends, Request, Header
+from datetime import datetime
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
+
 
 from fastapi.security import (
     OAuth2PasswordBearer,
@@ -10,10 +14,12 @@ from fastapi.security import (
 from database import get_db
 
 from schemas import (
-    UserSchema
+    UserSchema,
+    ForgotPasswordRequest,
+    ResetPasswordRequest
 )
 
-from models import User
+from models import User, PasswordResetToken
 
 from hashing import (
     hash_password,
@@ -26,6 +32,13 @@ from jwt_handler import (
 )
 
 from redis_client import redis_client
+from utils.token import generate_reset_token, get_token_expiry, is_token_expired
+from tasks.email_tasks import (
+    send_welcome_email,
+    send_login_alert,
+    send_password_reset,
+    send_password_changed
+)
 
 
 router = APIRouter()
@@ -85,6 +98,18 @@ def register(
 
     db.refresh(new_user)
 
+    # Queue welcome email asynchronously via Celery
+    try:
+        created_at_str = new_user.created_at.strftime("%Y-%m-%d %H:%M:%S UTC") if getattr(new_user, "created_at", None) else datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+        send_welcome_email.delay(
+            new_user.id,
+            new_user.email,
+            new_user.username,
+            created_at_str
+        )
+    except Exception as e:
+        print("[Register Email Queue Warning]:", e)
+
     access_token = create_access_token(
         data={
             "sub": new_user.email
@@ -119,6 +144,7 @@ def register(
     tags=["Authentication"]
 )
 def login(
+    req: Request,
     request: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ):
@@ -176,6 +202,30 @@ def login(
 
     redis_client.delete(attempts_key)
 
+    # Queue login alert email asynchronously
+    try:
+        user_agent = req.headers.get("user-agent", "Unknown Client")
+        browser = "Web Browser"
+        device = "Desktop/Mobile"
+        if "Chrome" in user_agent:
+            browser = "Chrome Browser"
+        elif "Firefox" in user_agent:
+            browser = "Firefox Browser"
+        elif "Safari" in user_agent:
+            browser = "Safari Browser"
+
+        login_time_str = datetime.utcnow().strftime("%B %d, %Y at %H:%M UTC")
+        send_login_alert.delay(
+            existing_user.id,
+            existing_user.email,
+            existing_user.username,
+            browser,
+            device,
+            login_time_str
+        )
+    except Exception as e:
+        print("[Login Alert Queue Warning]:", e)
+
     access_token = create_access_token(
         data={
             "sub": existing_user.email
@@ -186,6 +236,116 @@ def login(
         "access_token": access_token,
         "token_type": "bearer"
     }
+
+
+@router.post(
+    "/auth/forgot-password",
+    tags=["Authentication"]
+)
+def forgot_password(
+    payload: ForgotPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    logger.info(f"[Forgot Password Request Received] Processing request for email: {payload.email}")
+    user = db.query(User).filter(User.email == payload.email).first()
+
+    if user:
+        logger.info(f"[User Found] User ID: {user.id} | Email: {user.email}")
+        # Invalidate any existing unused reset tokens for this user
+        db.query(PasswordResetToken).filter(
+            PasswordResetToken.user_id == user.id,
+            PasswordResetToken.used == False
+        ).update({"used": True})
+
+        token = generate_reset_token()
+        expires_at = get_token_expiry(minutes=15)
+
+        reset_token_entry = PasswordResetToken(
+            user_id=user.id,
+            token=token,
+            expires_at=expires_at,
+            used=False
+        )
+        db.add(reset_token_entry)
+        db.commit()
+        logger.info(f"[Token Generated & Stored] User ID: {user.id} | Token generated, expires at: {expires_at}")
+
+        try:
+            task = send_password_reset.delay(
+                user.id,
+                user.email,
+                user.username,
+                token,
+                15
+            )
+            logger.info(f"[Celery Task Queued] send_password_reset | User ID: {user.id} | Email: {user.email} | Celery Task ID: {task.id}")
+        except Exception as e:
+            logger.error(f"[Forgot Password Email Queue Failed] Failed to queue send_password_reset task for email {user.email}: {e}", exc_info=True)
+    else:
+        logger.info(f"[Forgot Password Request] No user account found with email: {payload.email}")
+
+    return {
+        "success": True,
+        "message": "If an account with that email exists, a password reset link has been sent to your inbox."
+    }
+
+
+
+@router.post(
+    "/auth/reset-password",
+    tags=["Authentication"]
+)
+def reset_password(
+    payload: ResetPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    token_record = db.query(PasswordResetToken).filter(
+        PasswordResetToken.token == payload.token,
+        PasswordResetToken.used == False
+    ).first()
+
+    if not token_record or is_token_expired(token_record.expires_at):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "success": False,
+                "message": "Invalid or expired password reset token. Please request a new link."
+            }
+        )
+
+    user = db.query(User).filter(User.id == token_record.user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "success": False,
+                "message": "User not found."
+            }
+        )
+
+    # Update user password
+    user.password = hash_password(payload.new_password)
+    token_record.used = True
+
+    db.commit()
+
+    # Queue password changed confirmation email
+    try:
+        change_time_str = datetime.utcnow().strftime("%B %d, %Y at %H:%M UTC")
+        send_password_changed.delay(
+            user.id,
+            user.email,
+            user.username,
+            change_time_str
+        )
+    except Exception as e:
+        print("[Password Changed Email Queue Warning]:", e)
+
+    return {
+        "success": True,
+        "message": "Your password has been successfully reset. You can now log in with your new password."
+    }
+
     
 
 @router.post(

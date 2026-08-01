@@ -1,0 +1,35 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Order Delivered - #{{ order_id }}{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 16px;">
+  <span class="badge" style="background: rgba(0, 200, 83, 0.15); color: #00e676; border-color: rgba(0, 200, 83, 0.3);">Delivered</span>
+  <h1 class="h1" style="margin-top: 8px;">Package Delivered! ✨</h1>
+</div>
+
+<p class="text">Hi {{ username }}, your order <strong>#{{ order_id }}</strong> was successfully delivered on {{ delivered_date }}.</p>
+
+<div class="card">
+  <p style="margin: 0 0 12px 0; font-size: 14px; font-weight: 700; color: #ffffff;">Order Summary:</p>
+  <table class="table">
+    <tbody>
+      {% for item in items %}
+      <tr>
+        <td>{{ item.title }}</td>
+        <td style="text-align: right;">Qty: {{ item.quantity }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p style="margin: 12px 0 0 0; text-align: right; font-weight: 800; color: #ffffff;">
+    Total Paid: <span style="color: #e60000;">₹{{ "%.2f"|format(total_price) }}</span>
+  </p>
+</div>
+
+<p class="text">We hope you enjoy your purchase! Let us know how we did.</p>
+
+<div style="text-align: center;">
+  <a href="{{ shopping_url|default('https://ekarthub.com/products') }}" class="btn">Buy Again</a>
+</div>
+{% endblock %}

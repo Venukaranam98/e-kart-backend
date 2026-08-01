@@ -1,0 +1,24 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Order Shipped - #{{ order_id }}{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 16px;">
+  <span class="badge" style="background: rgba(0, 200, 83, 0.15); color: #00e676; border-color: rgba(0, 200, 83, 0.3);">Shipped</span>
+  <h1 class="h1" style="margin-top: 8px;">Your order is on its way! 🚚</h1>
+</div>
+
+<p class="text">Hi {{ username }}, great news! Your order <strong>#{{ order_id }}</strong> has been shipped and is heading towards your delivery address.</p>
+
+<div class="card">
+  <p style="margin: 0; font-size: 14px; color: #a0aec0;">
+    <strong style="color: #ffffff;">Tracking ID:</strong> {{ tracking_id|default('N/A') }}<br>
+    <strong style="color: #ffffff;">Courier Partner:</strong> {{ courier|default('Express Logistics') }}<br>
+    <strong style="color: #ffffff;">Expected Delivery:</strong> {{ expected_delivery|default('2-3 Days') }}
+  </p>
+</div>
+
+<div style="text-align: center;">
+  <a href="{{ track_url|default('https://ekarthub.com/orders/' ~ order_id ~ '/track') }}" class="btn">Track Package</a>
+</div>
+{% endblock %}

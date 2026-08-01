@@ -1,0 +1,23 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Welcome to EKARTHUB 🎉{% endblock %}
+
+{% block content %}
+<h1 class="h1">Welcome aboard, {{ username }}! 🎉</h1>
+<p class="text">Thank you for joining <strong>EKARTHUB</strong>. We are thrilled to have you as part of our high-performance network.</p>
+
+<div class="card">
+  <p style="margin: 0; font-size: 14px; color: #a0aec0;">
+    <strong style="color: #ffffff;">Account Details:</strong><br>
+    Username: {{ username }}<br>
+    Registered Email: {{ email }}<br>
+    Account Creation Date: {{ created_at }}
+  </p>
+</div>
+
+<p class="text">Explore our premium catalog of electronics, accessories, and gear built for professionals.</p>
+
+<div style="text-align: center;">
+  <a href="{{ shopping_url|default('https://ekarthub.com/products') }}" class="btn">Start Shopping</a>
+</div>
+{% endblock %}

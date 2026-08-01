@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}EKARTHUB Notification{% endblock %}</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #0a0a0f;
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+    }
+    .wrapper {
+      width: 100%;
+      background-color: #0a0a0f;
+      padding: 40px 16px;
+      box-sizing: border-box;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background-color: #14141f;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+    }
+    .header {
+      background: linear-gradient(135deg, #181824, #0f0f18);
+      padding: 32px;
+      text-align: center;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .logo {
+      display: inline-block;
+      font-size: 26px;
+      font-weight: 900;
+      letter-spacing: 2px;
+      color: #ffffff;
+      text-decoration: none;
+    }
+    .logo span {
+      color: #e60000;
+    }
+    .content {
+      padding: 40px 32px;
+    }
+    .h1 {
+      font-size: 24px;
+      font-weight: 800;
+      color: #ffffff;
+      margin-top: 0;
+      margin-bottom: 16px;
+      letter-spacing: -0.5px;
+    }
+    .text {
+      font-size: 15px;
+      color: #a0aec0;
+      margin-bottom: 24px;
+    }
+    .btn {
+      display: inline-block;
+      padding: 14px 32px;
+      background: linear-gradient(135deg, #e60000, #ff1a1a);
+      color: #ffffff !important;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 700;
+      border-radius: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin: 16px 0;
+      box-shadow: 0 8px 20px rgba(230, 0, 0, 0.3);
+    }
+    .card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+    }
+    .table th {
+      text-align: left;
+      font-size: 12px;
+      text-transform: uppercase;
+      color: #718096;
+      padding: 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .table td {
+      padding: 12px 10px;
+      font-size: 14px;
+      color: #cbd5e0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .footer {
+      background-color: #0f0f18;
+      padding: 24px 32px;
+      text-align: center;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 13px;
+      color: #718096;
+    }
+    .footer a {
+      color: #e60000;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      background: rgba(230, 0, 0, 0.15);
+      color: #ff4d4d;
+      border: 1px solid rgba(230, 0, 0, 0.3);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="container">
+      <div class="header">
+        <a href="{{ frontend_url|default('https://ekarthub.com') }}" class="logo">
+          EKART<span>HUB</span>
+        </a>
+      </div>
+      <div class="content">
+        {% block content %}{% endblock %}
+      </div>
+      <div class="footer">
+        <p>Need help? Contact our support team at <a href="mailto:support@ekarthub.com">support@ekarthub.com</a></p>
+        <p style="margin-top: 8px; font-size: 11px; color: #4a5568;">&copy; {{ current_year|default('2026') }} EKARTHUB Inc. All rights reserved.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

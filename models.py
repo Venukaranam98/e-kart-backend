@@ -23,6 +23,11 @@ class Product(Base):
 
     category = Column(String)
 
+    stock = Column(
+        Integer,
+        default=10
+    )
+
 
     cart_items = relationship(
         "Cart",
@@ -53,6 +58,11 @@ class User(Base):
 
     password = Column(String)
 
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
     cart_items = relationship(
         "Cart",
         back_populates="user"
@@ -79,9 +89,52 @@ class User(Base):
     )
 
     wishlist_items = relationship(
-    "Wishlist",
-    back_populates="user"
-)
+        "Wishlist",
+        back_populates="user"
+    )
+
+    reset_tokens = relationship(
+        "PasswordResetToken",
+        back_populates="user"
+    )
+
+
+class PasswordResetToken(Base):
+
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id")
+    )
+
+    token = Column(
+        String,
+        unique=True,
+        index=True
+    )
+
+    expires_at = Column(
+        DateTime,
+        nullable=False
+    )
+
+    used = Column(
+        Boolean,
+        default=False
+    )
+
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow
+    )
+
+    user = relationship(
+        "User",
+        back_populates="reset_tokens"
+    )
 
 
 class Cart(Base):

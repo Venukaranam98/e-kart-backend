@@ -1,0 +1,24 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Out For Delivery - #{{ order_id }}{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 16px;">
+  <span class="badge" style="background: rgba(255, 171, 0, 0.15); color: #ffab00; border-color: rgba(255, 171, 0, 0.3);">Out For Delivery</span>
+  <h1 class="h1" style="margin-top: 8px;">Arriving Today! 📦</h1>
+</div>
+
+<p class="text">Hi {{ username }}, your order <strong>#{{ order_id }}</strong> is out for delivery with our courier executive and will arrive today.</p>
+
+<div class="card">
+  <p style="margin: 0; font-size: 14px; color: #a0aec0;">
+    <strong style="color: #ffffff;">Tracking ID:</strong> {{ tracking_id|default('N/A') }}<br>
+    <strong style="color: #ffffff;">Courier Partner:</strong> {{ courier|default('Express Logistics') }}<br>
+    <strong style="color: #ffffff;">Expected Delivery:</strong> Today
+  </p>
+</div>
+
+<div style="text-align: center;">
+  <a href="{{ track_url|default('https://ekarthub.com/orders/' ~ order_id ~ '/track') }}" class="btn">View Live Status</a>
+</div>
+{% endblock %}

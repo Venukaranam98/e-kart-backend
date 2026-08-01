@@ -1,0 +1,22 @@
+{% extends "emails/base.html" %}
+
+{% block title %}⚠️ Low Stock Alert: {{ product_title }}{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 16px;">
+  <span class="badge" style="background: rgba(230, 0, 0, 0.2); color: #ff4d4d;">Admin Warning</span>
+  <h1 class="h1" style="margin-top: 8px;">Low Inventory Alert ⚠️</h1>
+</div>
+
+<p class="text">Attention Admin, stock levels for product <strong>"{{ product_title }}"</strong> have fallen below the configured threshold.</p>
+
+<div class="card">
+  <p style="margin: 0; font-size: 14px; color: #a0aec0;">
+    <strong style="color: #ffffff;">Product ID:</strong> #{{ product_id }}<br>
+    <strong style="color: #ffffff;">Product Title:</strong> {{ product_title }}<br>
+    <strong style="color: #ffffff;">Current Remaining Stock:</strong> <span style="color: #ff4d4d; font-weight: 800; font-size: 16px;">{{ current_stock }} units</span>
+  </p>
+</div>
+
+<p class="text">Please restock this item soon to prevent stockouts.</p>
+{% endblock %}

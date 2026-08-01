@@ -1,0 +1,19 @@
+{% extends "emails/base.html" %}
+
+{% block title %}New Security Alert: Successful Login{% endblock %}
+
+{% block content %}
+<h1 class="h1">New Account Login Alert 🔔</h1>
+<p class="text">Hi {{ username }}, we noticed a successful login to your <strong>EKARTHUB</strong> account.</p>
+
+<div class="card">
+  <p style="margin: 0; font-size: 14px; color: #a0aec0;">
+    <strong style="color: #ffffff;">Login Details:</strong><br>
+    Browser: {{ browser|default('Unknown Browser') }}<br>
+    Device: {{ device|default('Unknown Device') }}<br>
+    Time: {{ login_time }}
+  </p>
+</div>
+
+<p class="text">If this was you, no action is needed. If you do not recognize this login, please reset your password immediately.</p>
+{% endblock %}

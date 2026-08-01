@@ -1,0 +1,52 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Order Confirmation - #{{ order_id }}{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+  <h1 class="h1" style="margin: 0;">Order Confirmed!</h1>
+  <span class="badge">Processing</span>
+</div>
+
+<p class="text">Hi {{ username }}, thank you for your order! We have received your order <strong>#{{ order_id }}</strong> and are processing it now.</p>
+
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Product</th>
+        <th style="text-align: center;">Qty</th>
+        <th style="text-align: right;">Price</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+      <tr>
+        <td>{{ item.title }}</td>
+        <td style="text-align: center;">{{ item.quantity }}</td>
+        <td style="text-align: right;">₹{{ "%.2f"|format(item.price) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div style="text-align: right; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 12px;">
+    <p style="margin: 0; font-size: 16px; font-weight: 800; color: #ffffff;">
+      Total: <span style="color: #e60000;">₹{{ "%.2f"|format(total_price) }}</span>
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <p style="margin: 0; font-size: 14px; color: #a0aec0;">
+    <strong style="color: #ffffff;">Delivery Address:</strong><br>
+    {{ address|default('Default Shipping Address') }}<br><br>
+    <strong style="color: #ffffff;">Payment Method:</strong> {{ payment_method|default('Online Payment') }}<br>
+    <strong style="color: #ffffff;">Estimated Delivery:</strong> {{ estimated_delivery|default('3-5 Business Days') }}
+  </p>
+</div>
+
+<div style="text-align: center;">
+  <a href="{{ track_url|default('https://ekarthub.com/orders/' ~ order_id ~ '/track') }}" class="btn">Track Order</a>
+</div>
+{% endblock %}
