@@ -90,19 +90,27 @@ class EmailService:
 
     def _dispatch_via_smtp(self, msg: MIMEMultipart, to_email: str, port: int) -> bool:
         if port == 465:
-            with IPv4SMTP_SSL(self.smtp_host, port, timeout=15) as server:
+            with IPv4SMTP_SSL(self.smtp_host, port, timeout=30) as server:
                 logger.info("[SMTP Connection Established SSL IPv4] Authenticating...")
                 server.login(self.smtp_user, self.smtp_password)
                 logger.info("[SMTP Authenticated] Sending message...")
                 server.sendmail(self.from_email, [to_email], msg.as_string())
+                try:
+                    server.quit()
+                except Exception:
+                    pass
         else:
-            with IPv4SMTP(self.smtp_host, port, timeout=15) as server:
+            with IPv4SMTP(self.smtp_host, port, timeout=30) as server:
                 logger.info(f"[SMTP Connection Established IPv4 Port {port}] Initiating STARTTLS...")
                 server.starttls()
                 logger.info("[SMTP TLS Established] Authenticating...")
                 server.login(self.smtp_user, self.smtp_password)
                 logger.info("[SMTP Authenticated] Sending message...")
                 server.sendmail(self.from_email, [to_email], msg.as_string())
+                try:
+                    server.quit()
+                except Exception:
+                    pass
         return True
 
     def send_email(self, to_email: str, subject: str, template_name: str, context: dict) -> bool:
