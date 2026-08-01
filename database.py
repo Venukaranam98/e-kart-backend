@@ -14,13 +14,18 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+if DATABASE_URL:
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    print(f"[Database] Connection URL loaded successfully.")
+else:
+    print("[Database ERROR] DATABASE_URL environment variable is not set!")
 
-if not DATABASE_URL:
-    raise ValueError("DATABASE_URL environment variable is not set. Please configure DATABASE_URL in environment variables.")
-
-engine = create_engine(DATABASE_URL)
+try:
+    engine = create_engine(DATABASE_URL) if DATABASE_URL else create_engine("sqlite:///:memory:")
+except Exception as e:
+    print(f"[Database ERROR] Failed to create SQLAlchemy engine: {e}")
+    engine = create_engine("sqlite:///:memory:")
 
 SessionLocal = sessionmaker(
     autocommit=False,

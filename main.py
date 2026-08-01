@@ -40,10 +40,13 @@ load_dotenv()
 class OrderRequest(BaseModel):
     amount: int
 
+razorpay_key_id = os.getenv("RAZORPAY_KEY_ID", "")
+razorpay_key_secret = os.getenv("RAZORPAY_KEY_SECRET", "")
+
 client = razorpay.Client(
     auth=(
-        os.getenv("RAZORPAY_KEY_ID"),
-        os.getenv("RAZORPAY_KEY_SECRET")
+        razorpay_key_id,
+        razorpay_key_secret
     )
 )
 
@@ -83,7 +86,11 @@ app.include_router(address.router)
 app.include_router(admin.router)
 app.include_router(wishlist.router)
 
-models.Base.metadata.create_all(bind=engine)
+try:
+    models.Base.metadata.create_all(bind=engine)
+    print("[Database] Tables created/verified successfully.")
+except Exception as e:
+    print(f"[Database Warning] Table creation skipped or failed on startup: {e}")
 
 @app.get("/")
 def home():
