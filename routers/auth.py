@@ -1,5 +1,5 @@
 import logging
-from fastapi import APIRouter, HTTPException, status, Depends, Request, Header
+from fastapi import APIRouter, HTTPException, status, Depends, Request, Header, BackgroundTasks
 from datetime import datetime
 from sqlalchemy.orm import Session
 
@@ -37,8 +37,7 @@ from tasks.email_tasks import (
     send_welcome_email,
     send_login_alert,
     send_password_reset,
-    send_password_changed,
-    dispatch_email_task
+    send_password_changed
 )
 
 
@@ -59,6 +58,7 @@ oauth2_scheme = OAuth2PasswordBearer(
 
 def register(
     user: UserSchema,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
 
@@ -99,10 +99,10 @@ def register(
 
     db.refresh(new_user)
 
-    # Queue welcome email asynchronously via Celery
+    # Queue welcome email asynchronously via BackgroundTasks
     try:
         created_at_str = new_user.created_at.strftime("%Y-%m-%d %H:%M:%S UTC") if getattr(new_user, "created_at", None) else datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
-        dispatch_email_task(
+        background_tasks.add_task(
             send_welcome_email,
             new_user.id,
             new_user.email,
@@ -147,6 +147,7 @@ def register(
 )
 def login(
     req: Request,
+    background_tasks: BackgroundTasks,
     request: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ):
@@ -217,7 +218,7 @@ def login(
             browser = "Safari Browser"
 
         login_time_str = datetime.utcnow().strftime("%B %d, %Y at %H:%M UTC")
-        dispatch_email_task(
+        background_tasks.add_task(
             send_login_alert,
             existing_user.id,
             existing_user.email,
@@ -247,6 +248,7 @@ def login(
 )
 def forgot_password(
     payload: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     logger.info(f"[Forgot Password Request Received] Processing request for email: {payload.email}")
@@ -274,7 +276,7 @@ def forgot_password(
         logger.info(f"[Token Generated & Stored] User ID: {user.id} | Token generated, expires at: {expires_at}")
 
         try:
-            dispatch_email_task(
+            background_tasks.add_task(
                 send_password_reset,
                 user.id,
                 user.email,
@@ -300,6 +302,7 @@ def forgot_password(
 )
 def reset_password(
     payload: ResetPasswordRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     token_record = db.query(PasswordResetToken).filter(
@@ -335,7 +338,7 @@ def reset_password(
     # Queue password changed confirmation email
     try:
         change_time_str = datetime.utcnow().strftime("%B %d, %Y at %H:%M UTC")
-        dispatch_email_task(
+        background_tasks.add_task(
             send_password_changed,
             user.id,
             user.email,

@@ -1,34 +1,17 @@
 import os
 import logging
 from datetime import datetime
-from celery_app import celery_app
 from services.email_service import email_service
 from database import SessionLocal
 from models import User, Order, Address
-
-import threading
 
 logger = logging.getLogger(__name__)
 
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@ekarthub.com")
 
-def dispatch_email_task(task_func, *args, **kwargs):
-    """
-    Dispatches an email task asynchronously in a background thread
-    so HTTP API requests return instantly without network latency.
-    """
-    def _run_task():
-        try:
-            task_func.run(*args, **kwargs)
-        except Exception as err:
-            logger.error(f"[Background Thread Email Error] {err}")
 
-    threading.Thread(target=_run_task, daemon=True).start()
-
-@celery_app.task(bind=True, max_retries=3, default_retry_delay=60, autoretry_for=(Exception,), retry_backoff=True)
-def send_welcome_email(self, user_id: int, email: str, username: str, created_at: str = None):
-    task_id = self.request.id
-    logger.info(f"[Task Queued] send_welcome_email | User ID: {user_id} | Email: {email} | Task ID: {task_id}")
+def send_welcome_email(user_id: int, email: str, username: str, created_at: str = None):
+    logger.info(f"[BackgroundTask Executing] send_welcome_email | User ID: {user_id} | Email: {email}")
     
     date_str = created_at or datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
     context = {
@@ -45,26 +28,24 @@ def send_welcome_email(self, user_id: int, email: str, username: str, created_at
             template_name="emails/welcome.html",
             context=context
         )
-        logger.info(f"[Task Success] send_welcome_email | User ID: {user_id} | Email: {email} | Task ID: {task_id}")
+        logger.info(f"[BackgroundTask Success] send_welcome_email | User ID: {user_id} | Email: {email}")
     except Exception as exc:
-        logger.error(f"[Task Failed/Retrying] send_welcome_email | User ID: {user_id} | Task ID: {task_id} | Error: {exc}")
-        raise exc
+        logger.error(f"[BackgroundTask Error] send_welcome_email | User ID: {user_id} | Error: {exc}")
 
-@celery_app.task(bind=True, max_retries=3, default_retry_delay=60, autoretry_for=(Exception,), retry_backoff=True)
-def send_order_confirmation(self, order_id: int):
-    task_id = self.request.id
-    logger.info(f"[Task Queued] send_order_confirmation | Order ID: {order_id} | Task ID: {task_id}")
+
+def send_order_confirmation(order_id: int):
+    logger.info(f"[BackgroundTask Executing] send_order_confirmation | Order ID: {order_id}")
     
     db = SessionLocal()
     try:
         order = db.query(Order).filter(Order.id == order_id).first()
         if not order:
-            logger.error(f"[Task Error] Order #{order_id} not found.")
+            logger.error(f"[BackgroundTask Error] Order #{order_id} not found.")
             return
             
         user = db.query(User).filter(User.id == order.user_id).first()
         if not user or not user.email:
-            logger.error(f"[Task Error] User for Order #{order_id} not found or has no email.")
+            logger.error(f"[BackgroundTask Error] User for Order #{order_id} not found or has no email.")
             return
 
         items = []
@@ -96,17 +77,15 @@ def send_order_confirmation(self, order_id: int):
             template_name="emails/order_confirmation.html",
             context=context
         )
-        logger.info(f"[Task Success] send_order_confirmation | User ID: {user.id} | Email: {user.email} | Task ID: {task_id}")
+        logger.info(f"[BackgroundTask Success] send_order_confirmation | User ID: {user.id} | Email: {user.email}")
     except Exception as exc:
-        logger.error(f"[Task Failed/Retrying] send_order_confirmation | Order ID: {order_id} | Task ID: {task_id} | Error: {exc}")
-        raise exc
+        logger.error(f"[BackgroundTask Error] send_order_confirmation | Order ID: {order_id} | Error: {exc}")
     finally:
         db.close()
 
-@celery_app.task(bind=True, max_retries=3, default_retry_delay=60, autoretry_for=(Exception,), retry_backoff=True)
-def send_order_shipped(self, order_id: int, tracking_id: str = "EKART-TRK-9821", courier: str = "Express Logistics", expected_delivery: str = "2-3 Days"):
-    task_id = self.request.id
-    logger.info(f"[Task Queued] send_order_shipped | Order ID: {order_id} | Task ID: {task_id}")
+
+def send_order_shipped(order_id: int, tracking_id: str = "EKART-TRK-9821", courier: str = "Express Logistics", expected_delivery: str = "2-3 Days"):
+    logger.info(f"[BackgroundTask Executing] send_order_shipped | Order ID: {order_id}")
     
     db = SessionLocal()
     try:
@@ -128,17 +107,15 @@ def send_order_shipped(self, order_id: int, tracking_id: str = "EKART-TRK-9821",
             template_name="emails/order_shipped.html",
             context=context
         )
-        logger.info(f"[Task Success] send_order_shipped | Order ID: {order_id} | Email: {order.user.email} | Task ID: {task_id}")
+        logger.info(f"[BackgroundTask Success] send_order_shipped | Order ID: {order_id} | Email: {order.user.email}")
     except Exception as exc:
-        logger.error(f"[Task Failed/Retrying] send_order_shipped | Order ID: {order_id} | Task ID: {task_id} | Error: {exc}")
-        raise exc
+        logger.error(f"[BackgroundTask Error] send_order_shipped | Order ID: {order_id} | Error: {exc}")
     finally:
         db.close()
 
-@celery_app.task(bind=True, max_retries=3, default_retry_delay=60, autoretry_for=(Exception,), retry_backoff=True)
-def send_out_for_delivery(self, order_id: int, tracking_id: str = "EKART-TRK-9821", courier: str = "Express Logistics", expected_delivery: str = "Today"):
-    task_id = self.request.id
-    logger.info(f"[Task Queued] send_out_for_delivery | Order ID: {order_id} | Task ID: {task_id}")
+
+def send_out_for_delivery(order_id: int, tracking_id: str = "EKART-TRK-9821", courier: str = "Express Logistics", expected_delivery: str = "Today"):
+    logger.info(f"[BackgroundTask Executing] send_out_for_delivery | Order ID: {order_id}")
     
     db = SessionLocal()
     try:
@@ -160,17 +137,15 @@ def send_out_for_delivery(self, order_id: int, tracking_id: str = "EKART-TRK-982
             template_name="emails/out_for_delivery.html",
             context=context
         )
-        logger.info(f"[Task Success] send_out_for_delivery | Order ID: {order_id} | Email: {order.user.email} | Task ID: {task_id}")
+        logger.info(f"[BackgroundTask Success] send_out_for_delivery | Order ID: {order_id} | Email: {order.user.email}")
     except Exception as exc:
-        logger.error(f"[Task Failed/Retrying] send_out_for_delivery | Order ID: {order_id} | Task ID: {task_id} | Error: {exc}")
-        raise exc
+        logger.error(f"[BackgroundTask Error] send_out_for_delivery | Order ID: {order_id} | Error: {exc}")
     finally:
         db.close()
 
-@celery_app.task(bind=True, max_retries=3, default_retry_delay=60, autoretry_for=(Exception,), retry_backoff=True)
-def send_order_delivered(self, order_id: int, delivered_date: str = None):
-    task_id = self.request.id
-    logger.info(f"[Task Queued] send_order_delivered | Order ID: {order_id} | Task ID: {task_id}")
+
+def send_order_delivered(order_id: int, delivered_date: str = None):
+    logger.info(f"[BackgroundTask Executing] send_order_delivered | Order ID: {order_id}")
     
     db = SessionLocal()
     try:
@@ -199,17 +174,15 @@ def send_order_delivered(self, order_id: int, delivered_date: str = None):
             template_name="emails/order_delivered.html",
             context=context
         )
-        logger.info(f"[Task Success] send_order_delivered | Order ID: {order_id} | Email: {order.user.email} | Task ID: {task_id}")
+        logger.info(f"[BackgroundTask Success] send_order_delivered | Order ID: {order_id} | Email: {order.user.email}")
     except Exception as exc:
-        logger.error(f"[Task Failed/Retrying] send_order_delivered | Order ID: {order_id} | Task ID: {task_id} | Error: {exc}")
-        raise exc
+        logger.error(f"[BackgroundTask Error] send_order_delivered | Order ID: {order_id} | Error: {exc}")
     finally:
         db.close()
 
-@celery_app.task(bind=True, max_retries=3, default_retry_delay=60, autoretry_for=(Exception,), retry_backoff=True)
-def send_order_cancelled(self, order_id: int, refund_status: str = "Initiated", reason: str = "Customer request"):
-    task_id = self.request.id
-    logger.info(f"[Task Queued] send_order_cancelled | Order ID: {order_id} | Task ID: {task_id}")
+
+def send_order_cancelled(order_id: int, refund_status: str = "Initiated", reason: str = "Customer request"):
+    logger.info(f"[BackgroundTask Executing] send_order_cancelled | Order ID: {order_id}")
     
     db = SessionLocal()
     try:
@@ -230,17 +203,15 @@ def send_order_cancelled(self, order_id: int, refund_status: str = "Initiated", 
             template_name="emails/order_cancelled.html",
             context=context
         )
-        logger.info(f"[Task Success] send_order_cancelled | Order ID: {order_id} | Email: {order.user.email} | Task ID: {task_id}")
+        logger.info(f"[BackgroundTask Success] send_order_cancelled | Order ID: {order_id} | Email: {order.user.email}")
     except Exception as exc:
-        logger.error(f"[Task Failed/Retrying] send_order_cancelled | Order ID: {order_id} | Task ID: {task_id} | Error: {exc}")
-        raise exc
+        logger.error(f"[BackgroundTask Error] send_order_cancelled | Order ID: {order_id} | Error: {exc}")
     finally:
         db.close()
 
-@celery_app.task(bind=True, max_retries=3, default_retry_delay=60, autoretry_for=(Exception,), retry_backoff=True)
-def send_password_reset(self, user_id: int, email: str, username: str, reset_token: str, expires_in_minutes: int = 15):
-    task_id = self.request.id
-    logger.info(f"[Worker Picked Task] send_password_reset | User ID: {user_id} | Email: {email} | Task ID: {task_id}")
+
+def send_password_reset(user_id: int, email: str, username: str, reset_token: str, expires_in_minutes: int = 15):
+    logger.info(f"[BackgroundTask Executing] send_password_reset | User ID: {user_id} | Email: {email}")
     
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
     reset_url = f"{frontend_url}/reset-password?token={reset_token}"
@@ -254,23 +225,19 @@ def send_password_reset(self, user_id: int, email: str, username: str, reset_tok
     }
 
     try:
-        logger.info(f"[Task Executing SMTP Dispatch] send_password_reset | Email: {email} | Task ID: {task_id}")
         email_service.send_email(
             to_email=email,
             subject="Reset your EKARTHUB password",
             template_name="emails/forgot_password.html",
             context=context
         )
-        logger.info(f"[Task Success] send_password_reset | User ID: {user_id} | Email: {email} | Task ID: {task_id}")
+        logger.info(f"[BackgroundTask Success] send_password_reset | User ID: {user_id} | Email: {email}")
     except Exception as exc:
-        logger.error(f"[Task Failed/Retrying] send_password_reset | User ID: {user_id} | Task ID: {task_id} | Error: {exc}", exc_info=True)
-        raise exc
+        logger.error(f"[BackgroundTask Error] send_password_reset | User ID: {user_id} | Error: {exc}", exc_info=True)
 
 
-@celery_app.task(bind=True, max_retries=3, default_retry_delay=60, autoretry_for=(Exception,), retry_backoff=True)
-def send_password_changed(self, user_id: int, email: str, username: str, change_time: str = None):
-    task_id = self.request.id
-    logger.info(f"[Task Queued] send_password_changed | User ID: {user_id} | Email: {email} | Task ID: {task_id}")
+def send_password_changed(user_id: int, email: str, username: str, change_time: str = None):
+    logger.info(f"[BackgroundTask Executing] send_password_changed | User ID: {user_id} | Email: {email}")
     
     time_str = change_time or datetime.utcnow().strftime("%B %d, %Y at %H:%M UTC")
 
@@ -288,15 +255,13 @@ def send_password_changed(self, user_id: int, email: str, username: str, change_
             template_name="emails/password_changed.html",
             context=context
         )
-        logger.info(f"[Task Success] send_password_changed | User ID: {user_id} | Email: {email} | Task ID: {task_id}")
+        logger.info(f"[BackgroundTask Success] send_password_changed | User ID: {user_id} | Email: {email}")
     except Exception as exc:
-        logger.error(f"[Task Failed/Retrying] send_password_changed | User ID: {user_id} | Task ID: {task_id} | Error: {exc}")
-        raise exc
+        logger.error(f"[BackgroundTask Error] send_password_changed | User ID: {user_id} | Error: {exc}")
 
-@celery_app.task(bind=True, max_retries=3, default_retry_delay=60, autoretry_for=(Exception,), retry_backoff=True)
-def send_login_alert(self, user_id: int, email: str, username: str, browser: str, device: str, login_time: str = None):
-    task_id = self.request.id
-    logger.info(f"[Task Queued] send_login_alert | User ID: {user_id} | Email: {email} | Task ID: {task_id}")
+
+def send_login_alert(user_id: int, email: str, username: str, browser: str, device: str, login_time: str = None):
+    logger.info(f"[BackgroundTask Executing] send_login_alert | User ID: {user_id} | Email: {email}")
     
     time_str = login_time or datetime.utcnow().strftime("%B %d, %Y at %H:%M UTC")
 
@@ -316,15 +281,13 @@ def send_login_alert(self, user_id: int, email: str, username: str, browser: str
             template_name="emails/login_alert.html",
             context=context
         )
-        logger.info(f"[Task Success] send_login_alert | User ID: {user_id} | Email: {email} | Task ID: {task_id}")
+        logger.info(f"[BackgroundTask Success] send_login_alert | User ID: {user_id} | Email: {email}")
     except Exception as exc:
-        logger.error(f"[Task Failed/Retrying] send_login_alert | User ID: {user_id} | Task ID: {task_id} | Error: {exc}")
-        raise exc
+        logger.error(f"[BackgroundTask Error] send_login_alert | User ID: {user_id} | Error: {exc}")
 
-@celery_app.task(bind=True, max_retries=3, default_retry_delay=60, autoretry_for=(Exception,), retry_backoff=True)
-def send_low_stock_alert(self, product_id: int, title: str, current_stock: int):
-    task_id = self.request.id
-    logger.info(f"[Task Queued] send_low_stock_alert | Product ID: {product_id} | Stock: {current_stock} | Task ID: {task_id}")
+
+def send_low_stock_alert(product_id: int, title: str, current_stock: int):
+    logger.info(f"[BackgroundTask Executing] send_low_stock_alert | Product ID: {product_id} | Stock: {current_stock}")
     
     context = {
         "product_id": product_id,
@@ -339,7 +302,6 @@ def send_low_stock_alert(self, product_id: int, title: str, current_stock: int):
             template_name="emails/low_stock.html",
             context=context
         )
-        logger.info(f"[Task Success] send_low_stock_alert | Product ID: {product_id} | Admin Email: {ADMIN_EMAIL} | Task ID: {task_id}")
+        logger.info(f"[BackgroundTask Success] send_low_stock_alert | Product ID: {product_id} | Admin Email: {ADMIN_EMAIL}")
     except Exception as exc:
-        logger.error(f"[Task Failed/Retrying] send_low_stock_alert | Product ID: {product_id} | Task ID: {task_id} | Error: {exc}")
-        raise exc
+        logger.error(f"[BackgroundTask Error] send_low_stock_alert | Product ID: {product_id} | Error: {exc}")

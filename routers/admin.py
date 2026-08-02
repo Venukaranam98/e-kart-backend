@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, BackgroundTasks
 from sqlalchemy.orm import Session
 from database import get_db
 from models import (
@@ -12,8 +12,7 @@ from tasks.email_tasks import (
     send_order_shipped,
     send_out_for_delivery,
     send_order_delivered,
-    send_order_cancelled,
-    dispatch_email_task
+    send_order_cancelled
 )
 
 router = APIRouter(
@@ -86,6 +85,7 @@ def get_all_orders(
 @router.put("/orders/{order_id}/status")
 def update_admin_order_status(
     order_id: int,
+    background_tasks: BackgroundTasks,
     status: str = Body(..., embed=True),
     db: Session = Depends(get_db),
     admin=Depends(get_current_admin)
@@ -101,16 +101,16 @@ def update_admin_order_status(
     order.status = upper_status
     db.commit()
 
-    # Trigger corresponding status email tasks
+    # Trigger corresponding status email tasks via BackgroundTasks
     try:
         if upper_status == "SHIPPED":
-            dispatch_email_task(send_order_shipped, order.id)
+            background_tasks.add_task(send_order_shipped, order.id)
         elif upper_status == "OUT_FOR_DELIVERY":
-            dispatch_email_task(send_out_for_delivery, order.id)
+            background_tasks.add_task(send_out_for_delivery, order.id)
         elif upper_status == "DELIVERED":
-            dispatch_email_task(send_order_delivered, order.id)
+            background_tasks.add_task(send_order_delivered, order.id)
         elif upper_status == "CANCELLED":
-            dispatch_email_task(send_order_cancelled, order.id)
+            background_tasks.add_task(send_order_cancelled, order.id)
     except Exception as e:
         print("[Admin Order Status Email Warning]:", e)
 

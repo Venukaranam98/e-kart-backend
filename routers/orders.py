@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, BackgroundTasks
 from sqlalchemy.orm import Session
 import os
 
@@ -17,8 +17,7 @@ from tasks.email_tasks import (
     send_out_for_delivery,
     send_order_delivered,
     send_order_cancelled,
-    send_low_stock_alert,
-    dispatch_email_task
+    send_low_stock_alert
 )
 
 LOW_STOCK_THRESHOLD = int(os.getenv("LOW_STOCK_THRESHOLD", "5"))
@@ -30,6 +29,7 @@ router = APIRouter()
     tags=["Orders"]
 )
 def checkout(
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(
         get_current_user
@@ -78,7 +78,7 @@ def checkout(
             db.commit()
             if prod.stock < LOW_STOCK_THRESHOLD:
                 try:
-                    dispatch_email_task(send_low_stock_alert, prod.id, prod.title, prod.stock)
+                    background_tasks.add_task(send_low_stock_alert, prod.id, prod.title, prod.stock)
                 except Exception as e:
                     print("[Low Stock Alert Warning]:", e)
 
@@ -93,9 +93,9 @@ def checkout(
     except Exception as e:
         print("Redis cache clear warning:", e)
 
-    # Queue order confirmation email asynchronously
+    # Queue order confirmation email asynchronously via BackgroundTasks
     try:
-        dispatch_email_task(send_order_confirmation, new_order.id)
+        background_tasks.add_task(send_order_confirmation, new_order.id)
     except Exception as e:
         print("[Order Confirmation Email Queue Warning]:", e)
 
@@ -164,6 +164,7 @@ def get_user_orders(
 )
 def update_order_status(
     order_id: int,
+    background_tasks: BackgroundTasks,
     status: str = Body(..., embed=True),
     db: Session = Depends(get_db)
 ):
@@ -178,16 +179,16 @@ def update_order_status(
     order.status = upper_status
     db.commit()
 
-    # Trigger corresponding status email tasks
+    # Trigger corresponding status email tasks via BackgroundTasks
     try:
         if upper_status == "SHIPPED":
-            send_order_shipped.delay(order.id)
+            background_tasks.add_task(send_order_shipped, order.id)
         elif upper_status == "OUT_FOR_DELIVERY":
-            send_out_for_delivery.delay(order.id)
+            background_tasks.add_task(send_out_for_delivery, order.id)
         elif upper_status == "DELIVERED":
-            send_order_delivered.delay(order.id)
+            background_tasks.add_task(send_order_delivered, order.id)
         elif upper_status == "CANCELLED":
-            send_order_cancelled.delay(order.id)
+            background_tasks.add_task(send_order_cancelled, order.id)
     except Exception as e:
         print("[Order Status Email Queue Warning]:", e)
 
