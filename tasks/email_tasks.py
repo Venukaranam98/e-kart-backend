@@ -211,8 +211,7 @@ def send_order_cancelled(order_id: int, refund_status: str = "Initiated", reason
 
 
 def send_password_reset(user_id: int, email: str, username: str, reset_token: str, expires_in_minutes: int = 15):
-    logger.info(f"[BackgroundTask Executing] send_password_reset | User ID: {user_id} | Email: {email}")
-    
+    print("========== PASSWORD RESET TASK STARTED ==========")
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
     reset_url = f"{frontend_url}/reset-password?token={reset_token}"
 
