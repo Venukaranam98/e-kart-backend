@@ -1,159 +1,86 @@
 # E-Kart Backend
 
-A FastAPI-powered backend for the E-Kart e-commerce platform, providing secure APIs for authentication, product management, cart operations, orders, addresses, reviews, image uploads, and high-performance caching with Redis.
+A high-performance FastAPI backend for the E-Kart e-commerce platform, providing secure RESTful APIs for user authentication, product management, cart and wishlist operations, order fulfillment, Razorpay payments, transactional emails, and Redis caching.
 
-## Live API
+## Live Demo
 
-Backend: https://e-kart-backend-qyf8.onrender.com
+Backend API: https://e-kart-backend-qyf8.onrender.com  
+API Documentation (Swagger UI): https://e-kart-backend-qyf8.onrender.com/docs
 
 ---
 
 ## Features
 
-### Authentication
+### Authentication & Authorization
 
-* User Registration
-* User Login
-* JWT Token Authentication
-* Role-Based Authorization
-* Admin Access Control
-* Login Rate Limiting with Redis
-* Brute-Force Attack Protection
+* User Registration & Login
+* Forgot Password & Reset Password Email Workflow
+* Protected Routes with JWT Bearer Authentication
+* Role-Based Access Control (User & Admin Roles)
+* Secure Password Hashing with Bcrypt
+* Login Rate Limiting & Brute-Force Attack Protection via Redis
 
-### Product Management
+### Products & Catalog
 
-* Create Products
-* Update Products
-* Delete Products
-* Product Search
-* Category Filtering
-* Product Details
-* Product Pagination
-* Product Caching with Redis
+* Product CRUD Management
+* Category Filtering, Search & Sorting
+* Pagination & Price Filtering
+* Cloudinary Image CDN Integration for Product Media
+* Redis Caching for Product List & Product Details (Cache-Aside Pattern)
+* User Recently Viewed Products Tracking via Redis Lists
 
-### Cart Management
+### Shopping Cart
 
-* Add to Cart
-* Update Quantity
-* Remove Items
-* View Cart
-* User-Specific Cart Caching
+* User-Specific Global Cart Operations (Add, Update Quantity, Delete)
+* Real-Time Total & Item Count Calculation
+* Redis Caching for High-Speed Cart Access
 
-### Recently Viewed Products
+### Wishlist
 
-* Track Recently Viewed Products
-* Store User Activity with Redis Lists
-* Maintain View History Order
-* Automatically Remove Duplicates
-* Limit History Size with Redis
+* Save Favorite Products
+* View Saved Wishlist Items
+* Seamless Item Transfer to Cart
 
 ### Address Management
 
-* Add Address
-* Update Address
-* Retrieve User Addresses
+* Multiple Saved Delivery Addresses per User
+* Add, Edit, and Retrieve User Delivery Addresses
+* Address Selection during Order Placement
 
-### Orders
+### Orders & Payment Integration
 
-* Create Orders
-* Order History
-* Order Item Management
+* Order Placement with Real-Time Total Calculation
+* Order Status Tracking (PROCESSING, SHIPPED, DELIVERED, CANCELLED)
+* Razorpay Payment Gateway Integration (Order Creation & Signature Verification)
+* Support for Cash on Delivery (COD) & Online Payments
 
-### Reviews
+### Email Notifications & Async Tasks
 
-* Add Product Reviews
-* Product Rating Support
+* Asynchronous Transactional Email Delivery via Brevo (Sendinblue) API
+* Password Reset Email Link Delivery with Expiration Tokens
+* Non-Blocking Execution with FastAPI BackgroundTasks & Celery Worker Support
 
-### Image Uploads
+### System Health & Administration
 
-* Cloudinary Integration
-* Secure Image Storage
-* Cloud Image URLs
-
----
-
-## Redis Features
-
-* Product List Caching
-* Individual Product Caching
-* Cart Caching per User
-* Recently Viewed Products
-* Login Rate Limiting
-* Automatic Cache Invalidation
-* Cache-Aside Pattern Implementation
-* Redis TTL for Temporary Data
+* Admin Endpoints for User, Order, and Product Administration
+* System Health Check Endpoint (`/health`) for Database & Redis Status Verification
 
 ---
 
 ## Tech Stack
 
+* Python 3.11+
 * FastAPI
-* SQLAlchemy (ORM)
-* PostgreSQL
-* Redis
-* Pydantic
-* JWT Authentication
-* Cloudinary
-* Docker (Redis Container)
-* Uvicorn
-
----
-
-## Database Models
-
-* User
-* Product
-* Cart
-* Order
-* OrderItem
-* Address
-* Review
-
----
-
-## API Endpoints
-
-### Authentication
-
-* Register User
-* Login User
-* Get User Profile
-* Get Admin Profile
-
-### Products
-
-* Create Product
-* Get Products
-* Get Product by ID
-* Search Products
-* Filter Products
-* Get Products by Category
-* Get Recently Viewed Products
-* Update Product
-* Delete Product
-* Upload Product Image
-
-### Cart
-
-* Add to Cart
-* Get Cart
-* Update Cart Quantity
-* Remove From Cart
-
-### Orders
-
-* Create Order
-* Get Orders
-
-### Address
-
-* Create Address
-* Update Address
-* Get Addresses
-
-### Reviews
-
-* Add Review
+* SQLAlchemy 2 (ORM)
+* PostgreSQL / SQLite
+* Redis & Upstash Redis
+* Pydantic v2
+* PyJWT & Passlib (Bcrypt)
+* Brevo (Sendinblue) SMTP API
+* Razorpay Python SDK
+* Cloudinary Python SDK
+* Celery & FastAPI BackgroundTasks
+* Uvicorn & Docker
 
 ---
 
@@ -170,12 +97,12 @@ cd backend
 ### 2. Create and Activate Virtual Environment
 
 ```bash
-python -m venv .venv
-
 # Windows
+python -m venv .venv
 .venv\Scripts\activate
 
 # macOS/Linux
+python3 -m venv .venv
 source .venv/bin/activate
 ```
 
@@ -185,29 +112,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. Configure Environment Variables
-
-Create a `.env` file inside the `backend` directory:
-
-```env
-DATABASE_URL=your_database_url
-
-SECRET_KEY=your_secret_key
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=60
-
-CLOUDINARY_CLOUD_NAME=your_cloud_name
-CLOUDINARY_API_KEY=your_api_key
-CLOUDINARY_API_SECRET=your_api_secret
-```
-
-### 5. Start Redis
-
-```bash
-docker run -d --name ekart-redis -p 6379:6379 redis
-```
-
-### 6. Run the Application
+### 4. Run the Application
 
 ```bash
 uvicorn main:app --reload
@@ -215,23 +120,73 @@ uvicorn main:app --reload
 
 ---
 
-## Project Structure
+## Environment Variables
+
+Create a `.env` file in the `backend` root directory:
+
+```env
+# Database Configuration
+DATABASE_URL=postgresql://user:password@localhost:5432/ekart_db
+
+# Security & Authentication
+SECRET_KEY=your_jwt_secret_key
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=60
+
+# Razorpay Payment Gateway
+RAZORPAY_KEY_ID=your_razorpay_key_id
+RAZORPAY_KEY_SECRET=your_razorpay_key_secret
+
+# Cloudinary Image Storage
+CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
+CLOUDINARY_API_KEY=your_cloudinary_api_key
+CLOUDINARY_API_SECRET=your_cloudinary_api_secret
+
+# Redis Cache Configuration
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_DB=0
+CACHE_EXPIRE=3600
+REDIS_URL=your_redis_connection_url
+
+# Celery Configuration (Optional)
+CELERY_BROKER_URL=your_redis_url
+CELERY_RESULT_BACKEND=your_redis_url
+
+# Email Service (Brevo SMTP API)
+SMTP_HOST=smtp-relay.brevo.com
+SMTP_PORT=587
+SMTP_USERNAME=your_brevo_smtp_username
+SMTP_PASSWORD=your_brevo_smtp_password
+EMAIL_FROM=your_verified_sender_email@domain.com
+SMTP_FROM_NAME=EKARTHUB
+```
+
+---
+
+## Folder Structure
 
 ```text
 backend/
 ├── routers/
-│   ├── __init__.py
 │   ├── address.py
 │   ├── admin.py
 │   ├── auth.py
 │   ├── cart.py
+│   ├── health.py
 │   ├── orders.py
 │   ├── payments.py
-│   └── products.py
-├── .venv/
-├── .env
-├── .gitignore
+│   ├── products.py
+│   └── wishlist.py
+├── services/
+│   └── email_service.py
+├── tasks/
+│   └── email_tasks.py
+├── utils/
+│   └── token.py
+├── celery_app.py
 ├── database.py
+├── Dockerfile
 ├── hashing.py
 ├── jwt_handler.py
 ├── main.py
@@ -245,14 +200,11 @@ backend/
 
 ---
 
-## Performance & Security Enhancements
+## Project Architecture
 
-* Redis Cache-Aside Pattern
-* Automatic Cache Invalidation on CRUD Operations
-* User-Specific Redis Keys
-* Login Rate Limiting with TTL
-* Optimized Product Retrieval
-* Reduced Database Load
-* JWT-Based Authentication
-* Role-Based Access Control
-`
+The backend follows a domain-driven, modular RESTful API architecture:
+* **Routers (`routers/`)**: Expressive, feature-focused API endpoints (auth, products, cart, wishlist, orders, payments, address, admin, health).
+* **Database Models & ORM (`models.py`, `database.py`, `schemas.py`)**: Declarative SQLAlchemy models with Pydantic request/response schemas for data validation and sanitization.
+* **Caching & Rate Limiting (`redis_client.py`)**: Cache-Aside pattern for high-frequency queries (products, cart) and Redis-backed rate limiting for login security.
+* **Service & Task Layer (`services/`, `tasks/`)**: Modular email service leveraging Brevo SMTP API integrated with FastAPI `BackgroundTasks` for non-blocking asynchronous email delivery.
+* **Security & Auth (`jwt_handler.py`, `hashing.py`)**: Stateless JWT authorization headers with salted Bcrypt password hashing.
