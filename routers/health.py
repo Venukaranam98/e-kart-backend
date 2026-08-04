@@ -1,28 +1,34 @@
+"""Health check router endpoint for service verification."""
+
+from datetime import datetime, timezone
 import os
 import time
-from datetime import datetime, timezone
+from typing import Any
+
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from database import get_db
+from db.session import get_db
 
 router = APIRouter(tags=["Health Check"])
 
 START_TIME = time.time()
 
 
-@router.api_route("/health", methods=["GET", "HEAD"], summary="Health Check Endpoint")
-def health_check(db: Session = Depends(get_db)):
-    """
-    Production health check endpoint.
-    Performs a lightweight 'SELECT 1' query to verify PostgreSQL database connectivity.
-    """
+@router.api_route(
+    "/health",
+    methods=["GET", "HEAD"],
+    summary="Health Check Endpoint",
+    response_model=None,
+)
+def health_check(
+    db: Session = Depends(get_db),
+) -> Any:
+    """Production health check endpoint verifying database connectivity."""
     try:
-    
         db.execute(text("SELECT 1"))
-
         uptime_seconds = round(time.time() - START_TIME, 2)
 
         return {

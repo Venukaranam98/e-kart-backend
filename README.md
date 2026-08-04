@@ -168,6 +168,18 @@ SMTP_FROM_NAME=EKARTHUB
 
 ```text
 backend/
+├── constants/
+│   ├── app_constants.py
+│   └── __init__.py
+├── core/
+│   ├── security.py
+│   └── __init__.py
+├── db/
+│   ├── session.py
+│   └── __init__.py
+├── dependencies/
+│   ├── auth.py
+│   └── __init__.py
 ├── routers/
 │   ├── address.py
 │   ├── admin.py
@@ -204,7 +216,8 @@ backend/
 
 The backend follows a domain-driven, modular RESTful API architecture:
 * **Routers (`routers/`)**: Expressive, feature-focused API endpoints (auth, products, cart, wishlist, orders, payments, address, admin, health).
-* **Database Models & ORM (`models.py`, `database.py`, `schemas.py`)**: Declarative SQLAlchemy models with Pydantic request/response schemas for data validation and sanitization.
+* **Core & Dependencies (`core/`, `dependencies/`)**: Centralized security, token handling, and dependency injection context managers (`get_db`, `get_current_user`, `get_current_admin`).
+* **Database Layer (`db/`, `models.py`, `database.py`, `schemas.py`)**: Declarative SQLAlchemy ORM models with Pydantic v2 request/response schemas for data validation and sanitization.
 * **Caching & Rate Limiting (`redis_client.py`)**: Cache-Aside pattern for high-frequency queries (products, cart) and Redis-backed rate limiting for login security.
 * **Service & Task Layer (`services/`, `tasks/`)**: Modular email service leveraging Brevo SMTP API integrated with FastAPI `BackgroundTasks` for non-blocking asynchronous email delivery.
-* **Security & Auth (`jwt_handler.py`, `hashing.py`)**: Stateless JWT authorization headers with salted Bcrypt password hashing.
+* **Constants & Utilities (`constants/`, `utils/`)**: Domain constants and cryptographic token generator utilities.

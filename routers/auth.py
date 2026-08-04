@@ -1,211 +1,152 @@
+"""Authentication and user profile router endpoints."""
+
 import logging
-from fastapi import APIRouter, HTTPException, status, Depends, Request, Header, BackgroundTasks
 from datetime import datetime
+from typing import Any
+
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Request,
+    status,
+)
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
+
+from core.security import (
+    create_access_token,
+    hash_password,
+    verify_password,
+)
+from db.session import get_db
+from dependencies.auth import (
+    get_current_admin,
+    get_current_user,
+    oauth2_scheme,
+)
+from models import PasswordResetToken, User
+from redis_client import redis_client
+from schemas import (
+    ForgotPasswordRequest,
+    ResetPasswordRequest,
+    UserSchema,
+)
+from tasks.email_tasks import (
+    send_login_alert,
+    send_password_changed,
+    send_password_reset,
+    send_welcome_email,
+)
+from utils.token import (
+    generate_reset_token,
+    get_token_expiry,
+    is_token_expired,
+)
 
 logger = logging.getLogger(__name__)
 
-
-from fastapi.security import (
-    OAuth2PasswordBearer,
-    OAuth2PasswordRequestForm
-)
-
-from database import get_db
-
-from schemas import (
-    UserSchema,
-    ForgotPasswordRequest,
-    ResetPasswordRequest
-)
-
-from models import User, PasswordResetToken
-
-from hashing import (
-    hash_password,
-    verify_password
-)
-
-from jwt_handler import (
-    create_access_token,
-    verify_access_token
-)
-
-from redis_client import redis_client
-from utils.token import generate_reset_token, get_token_expiry, is_token_expired
-from tasks.email_tasks import (
-    send_welcome_email,
-    send_login_alert,
-    send_password_reset,
-    send_password_changed
-)
-
-
 router = APIRouter()
-
-
-oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl="login"
-)
-
 
 
 @router.post(
     "/register",
     status_code=status.HTTP_201_CREATED,
-    tags=["Authentication"]
+    tags=["Authentication"],
 )
-
 def register(
     user: UserSchema,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
-):
-
-    existing_user = db.query(User).filter(
-        User.email == user.email
-    ).first()
-
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Register a new user account."""
+    existing_user = db.query(User).filter(User.email == user.email).first()
     if existing_user:
-
         raise HTTPException(
-
-            status_code=400,
-
-            detail={
-
-                "success": False,
-
-                "message": "Email already registered",
-
-
-            }
-
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"success": False, "message": "Email already registered"},
         )
 
-    hashed_password = hash_password(
-        user.password
-    )
-
-    new_user = User(
-        username=user.username,
-        email=user.email,
-        password=hashed_password
-    )
+    hashed_password = hash_password(user.password)
+    new_user = User(username=user.username, email=user.email, password=hashed_password)
 
     db.add(new_user)
-
     db.commit()
-
     db.refresh(new_user)
 
-    # Queue welcome email asynchronously via BackgroundTasks
     try:
-        created_at_str = new_user.created_at.strftime("%Y-%m-%d %H:%M:%S UTC") if getattr(new_user, "created_at", None) else datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+        created_at_str = (
+            new_user.created_at.strftime("%Y-%m-%d %H:%M:%S UTC")
+            if getattr(new_user, "created_at", None)
+            else datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+        )
         background_tasks.add_task(
             send_welcome_email,
             new_user.id,
             new_user.email,
             new_user.username,
-            created_at_str
+            created_at_str,
         )
     except Exception as e:
-        print("[Register Email Queue Warning]:", e)
+        logger.warning(f"[Register Email Queue Warning]: {e}")
 
-    access_token = create_access_token(
-        data={
-            "sub": new_user.email
-        }
-    )
+    access_token = create_access_token(data={"sub": new_user.email})
 
     return {
-
-    "success": True,
-
-    "message": "Registration Successful",
-
-    "data": {
-
-        "access_token": access_token,
-
-        "token_type": "bearer"
-
+        "success": True,
+        "message": "Registration Successful",
+        "data": {"access_token": access_token, "token_type": "bearer"},
     }
 
-}
 
-    
-
-
-@router.post(
-    "/login",
-    tags=["Authentication"]
-)
-@router.post(
-    "/auth/login",
-    tags=["Authentication"]
-)
+@router.post("/login", tags=["Authentication"])
+@router.post("/auth/login", tags=["Authentication"])
 def login(
     req: Request,
     background_tasks: BackgroundTasks,
     request: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db)
-):
-
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Authenticate user with credentials and return JWT token."""
     attempts_key = f"login_attempts:{request.username}"
-
     attempts = redis_client.get(attempts_key)
 
     if attempts and int(attempts) >= 5:
         raise HTTPException(
-            status_code=429,
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail={
                 "success": False,
-                "message": "Too many failed login attempts. Try again in 15 minutes."
-            }
+                "message": "Too many failed login attempts. Try again in 15 minutes.",
+            },
         )
 
-    existing_user = db.query(User).filter(
-        User.email == request.username
-    ).first()
-
+    existing_user = db.query(User).filter(User.email == request.username).first()
     if not existing_user:
-
         redis_client.incr(attempts_key)
         redis_client.expire(attempts_key, 900)
-
         raise HTTPException(
-            status_code=404,
-            detail={
-                "success": False,
-                "message": "User not found"
-            }
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"success": False, "message": "User not found"},
         )
 
-    password_valid = verify_password(
-        request.password,
-        existing_user.password
-    )
-
+    password_valid = verify_password(request.password, existing_user.password)
     if not password_valid:
-
         redis_client.incr(attempts_key)
         redis_client.expire(attempts_key, 900)
 
         curr_attempts = redis_client.get(attempts_key)
         remaining = 5 - (int(curr_attempts) if curr_attempts else 1)
-
         raise HTTPException(
-            status_code=401,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail={
                 "success": False,
-                "message": f"Invalid password. {remaining} attempts remaining."
-            }
+                "message": f"Invalid password. {remaining} attempts remaining.",
+            },
         )
 
     redis_client.delete(attempts_key)
 
-    # Queue login alert email asynchronously
     try:
         user_agent = req.headers.get("user-agent", "Unknown Client")
         browser = "Web Browser"
@@ -225,41 +166,33 @@ def login(
             existing_user.username,
             browser,
             device,
-            login_time_str
+            login_time_str,
         )
     except Exception as e:
-        print("[Login Alert Queue Warning]:", e)
+        logger.warning(f"[Login Alert Queue Warning]: {e}")
 
-    access_token = create_access_token(
-        data={
-            "sub": existing_user.email
-        }
-    )
+    access_token = create_access_token(data={"sub": existing_user.email})
 
-    return {
-        "access_token": access_token,
-        "token_type": "bearer"
-    }
+    return {"access_token": access_token, "token_type": "bearer"}
 
 
-@router.post(
-    "/auth/forgot-password",
-    tags=["Authentication"]
-)
+@router.post("/auth/forgot-password", tags=["Authentication"])
 def forgot_password(
     payload: ForgotPasswordRequest,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
-):
-    logger.info(f"[Forgot Password Request Received] Processing request for email: {payload.email}")
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Request a password reset link for registered email."""
+    logger.info(
+        f"[Forgot Password Request Received] Processing request for email: {payload.email}"
+    )
     user = db.query(User).filter(User.email == payload.email).first()
 
     if user:
         logger.info(f"[User Found] User ID: {user.id} | Email: {user.email}")
-        # Invalidate any existing unused reset tokens for this user
         db.query(PasswordResetToken).filter(
             PasswordResetToken.user_id == user.id,
-            PasswordResetToken.used == False
+            PasswordResetToken.used == False,
         ).update({"used": True})
 
         token = generate_reset_token()
@@ -269,11 +202,13 @@ def forgot_password(
             user_id=user.id,
             token=token,
             expires_at=expires_at,
-            used=False
+            used=False,
         )
         db.add(reset_token_entry)
         db.commit()
-        logger.info(f"[Token Generated & Stored] User ID: {user.id} | Token generated, expires at: {expires_at}")
+        logger.info(
+            f"[Token Generated & Stored] User ID: {user.id} | Token generated, expires at: {expires_at}"
+        )
 
         try:
             background_tasks.add_task(
@@ -282,60 +217,60 @@ def forgot_password(
                 user.email,
                 user.username,
                 token,
-                15
+                15,
             )
         except Exception as e:
-            logger.error(f"[Forgot Password Email Queue Failed] Failed to queue send_password_reset task for email {user.email}: {e}", exc_info=True)
+            logger.error(
+                f"[Forgot Password Email Queue Failed] Failed to queue send_password_reset task for email {user.email}: {e}",
+                exc_info=True,
+            )
     else:
-        logger.info(f"[Forgot Password Request] No user account found with email: {payload.email}")
+        logger.info(
+            f"[Forgot Password Request] No user account found with email: {payload.email}"
+        )
 
     return {
         "success": True,
-        "message": "If an account with that email exists, a password reset link has been sent to your inbox."
+        "message": "If an account with that email exists, a password reset link has been sent to your inbox.",
     }
 
 
-
-@router.post(
-    "/auth/reset-password",
-    tags=["Authentication"]
-)
+@router.post("/auth/reset-password", tags=["Authentication"])
 def reset_password(
     payload: ResetPasswordRequest,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
-):
-    token_record = db.query(PasswordResetToken).filter(
-        PasswordResetToken.token == payload.token,
-        PasswordResetToken.used == False
-    ).first()
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Reset user password using reset token."""
+    token_record = (
+        db.query(PasswordResetToken)
+        .filter(
+            PasswordResetToken.token == payload.token,
+            PasswordResetToken.used == False,
+        )
+        .first()
+    )
 
     if not token_record or is_token_expired(token_record.expires_at):
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail={
                 "success": False,
-                "message": "Invalid or expired password reset token. Please request a new link."
-            }
+                "message": "Invalid or expired password reset token. Please request a new link.",
+            },
         )
 
     user = db.query(User).filter(User.id == token_record.user_id).first()
     if not user:
         raise HTTPException(
-            status_code=404,
-            detail={
-                "success": False,
-                "message": "User not found."
-            }
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"success": False, "message": "User not found."},
         )
 
-    # Update user password
     user.password = hash_password(payload.new_password)
     token_record.used = True
-
     db.commit()
 
-    # Queue password changed confirmation email
     try:
         change_time_str = datetime.utcnow().strftime("%B %d, %Y at %H:%M UTC")
         background_tasks.add_task(
@@ -343,156 +278,69 @@ def reset_password(
             user.id,
             user.email,
             user.username,
-            change_time_str
+            change_time_str,
         )
     except Exception as e:
-        print("[Password Changed Email Queue Warning]:", e)
+        logger.warning(f"[Password Changed Email Queue Warning]: {e}")
 
     return {
         "success": True,
-        "message": "Your password has been successfully reset. You can now log in with your new password."
+        "message": "Your password has been successfully reset. You can now log in with your new password.",
     }
 
-    
 
-@router.post(
-    "/auth/logout",
-    tags=["Authentication"]
-)
-def logout():
-    return {
-        "success": True,
-        "message": "Logged out successfully"
-    }
-    
-
-def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db)
-):
-
-    email = verify_access_token(token)
-
-    if email is None:
-
-        raise HTTPException(
-
-            status_code=401,
-
-            detail={
-
-                "success": False,
-
-                "message": "Invalid Token",
+@router.post("/auth/logout", tags=["Authentication"])
+def logout() -> dict[str, Any]:
+    """User logout endpoint."""
+    return {"success": True, "message": "Logged out successfully"}
 
 
-            }
-
-        )
-
-    user = db.query(User).filter(
-        User.email == email
-    ).first()
-
-    return user
-
-
-@router.get(
-    "/profile",
-    tags=["Authentication"]
-)
-@router.get(
-    "/auth/me",
-    tags=["Authentication"]
-)
+@router.get("/profile", tags=["Authentication"])
+@router.get("/auth/me", tags=["Authentication"])
 def get_profile(
-    current_user: User = Depends(get_current_user)
-):
-
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Fetch current user profile details."""
     return {
-
         "success": True,
-
         "message": "Profile fetched successfully",
-
         "data": {
-
             "id": current_user.id,
-
             "username": current_user.username,
-
-            "email": current_user.email
-
-        }
-
+            "email": current_user.email,
+        },
     }
 
 
-def get_current_admin(
-
-    current_user: User = Depends(
-        get_current_user
-    )
-
-):
-
-    if not current_user.is_admin:
-
-        raise HTTPException(
-
-            status_code=403,
-
-            detail={
-
-                "success": False,
-
-                "message": "Not authorized",
-
-
-            }
-
-        )
-
-    return current_user
-
-
-@router.get(
-    "/admin/profile",
-    tags=["Authentication"]
-)
-
+@router.get("/admin/profile", tags=["Authentication"])
 def admin_profile(
-
-    current_admin: User = Depends(
-        get_current_admin
-    )
-
-):
-
+    current_admin: User = Depends(get_current_admin),
+) -> dict[str, Any]:
+    """Fetch current admin profile details."""
     return {
-
         "success": True,
-
         "message": "Admin authorized successfully",
-
         "data": {
-
             "id": current_admin.id,
-
             "username": current_admin.username,
-
             "email": current_admin.email,
-
-            "is_admin": current_admin.is_admin
-
-        }
-
+            "is_admin": current_admin.is_admin,
+        },
     }
+
 
 @router.get("/test-token")
-def test_token():
-    from jwt_handler import SECRET_KEY
+def test_token() -> dict[str, Any]:
+    """Utility endpoint to test secret key initialization."""
+    from core.security import SECRET_KEY
 
-    return {
-        "secret_key": SECRET_KEY
-    }
+    return {"secret_key": SECRET_KEY}
+
+
+# Compatibility re-exports for dependency consumers importing from routers.auth
+__all__ = [
+    "get_current_admin",
+    "get_current_user",
+    "oauth2_scheme",
+    "router",
+]

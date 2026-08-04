@@ -1,85 +1,53 @@
-from fastapi import (
-    APIRouter,
-    Query,
-    UploadFile,
-    File,
-    Depends,
-    HTTPException
-)
+"""Product catalog, search, filtering, and review management router endpoints."""
 
-from sqlalchemy.orm import Session
+import json
+import logging
+from typing import Any
 
-from sqlalchemy import asc, desc
-
-from database import get_db
-
-from schemas import (
-    ProductSchema,
-    ReviewSchema,
-    ProductResponse
-)
-
-from models import (
-    Product,
-    User,
-    Review
-)
-
-from routers.auth import (
-    get_current_admin,
-    get_current_user
-)
-
-import shutil
-import uuid
-import os
 import cloudinary
 import cloudinary.uploader
-from dotenv import load_dotenv
-import json
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
+from sqlalchemy import asc, desc
+from sqlalchemy.orm import Session
 
+from db.session import get_db
+from dependencies.auth import get_current_admin, get_current_user
+from models import Product, Review, User
 from redis_client import redis_client
+from schemas import ProductResponse, ProductSchema, ReviewSchema
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-@router.post(
-    "/products",
-    tags=["Products"]
-)
-
+@router.post("/products", tags=["Products"])
 def create_product(
-
     product: ProductSchema,
-
     db: Session = Depends(get_db),
-
-    current_admin: User = Depends(
-        get_current_admin
-    )
-
-):
-
+    current_admin: User = Depends(get_current_admin),
+) -> dict[str, Any]:
+    """Create a new product in the store inventory (Admin only)."""
     new_product = Product(
-
         title=product.title,
-
         description=product.description,
-
         price=product.price,
-
         image=product.image,
-
-        category=product.category
-
+        category=product.category,
     )
 
     db.add(new_product)
-
     db.commit()
-
     db.refresh(new_product)
+
     for key in redis_client.scan_iter("product:*"):
         redis_client.delete(key)
 
@@ -87,381 +55,209 @@ def create_product(
         redis_client.delete(key)
 
     return {
-
         "success": True,
-
         "message": "Product created successfully",
-
         "data": {
-
             "id": new_product.id,
-
             "title": new_product.title,
-
             "price": new_product.price,
-
-            "category": new_product.category
-
-        }
-
+            "category": new_product.category,
+        },
     }
 
 
-@router.get(
-    "/products",
-    tags=["Products"]
-)
+@router.get("/products", tags=["Products"])
 def get_products(
     page: int = 1,
     limit: int = 5,
-    db: Session = Depends(get_db)
-):
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Fetch paginated products list with Redis caching."""
     cache_key = f"products:page:{page}:limit:{limit}"
-
     cached_products = redis_client.get(cache_key)
 
     if cached_products:
-        print("Cache hit")
+        logger.info("Products cache hit")
         return json.loads(cached_products)
 
-    print("Cache miss")
-
+    logger.info("Products cache miss")
     skip = (page - 1) * limit
-
-    products = db.query(Product).order_by(
-        asc(Product.id)
-    ).offset(
-        skip
-    ).limit(
-        limit
-    ).all()
+    products = (
+        db.query(Product).order_by(asc(Product.id)).offset(skip).limit(limit).all()
+    )
 
     response = {
         "success": True,
         "message": "Products fetched successfully",
         "data": [
-            ProductResponse.model_validate(product).model_dump()
-            for product in products
-        ]
+            ProductResponse.model_validate(product).model_dump() for product in products
+        ],
     }
 
-    redis_client.set(
-        cache_key,
-        json.dumps(response),
-        ex=3600
-    )
-
+    redis_client.set(cache_key, json.dumps(response), ex=3600)
     return response
 
-@router.get(
-    "/products/filter",
-    tags=["Products"]
-)
 
+@router.get("/products/filter", tags=["Products"])
 def filter_products(
-
-    category: str = None,
-
-    min_price: float = None,
-
-    max_price: float = None,
-
-    sort: str = None,
-
-    db: Session = Depends(get_db)
-
-):
-
+    category: str | None = None,
+    min_price: float | None = None,
+    max_price: float | None = None,
+    sort: str | None = None,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Filter and sort product catalog by category, price range, and order."""
     query = db.query(Product)
 
     if category:
-
-        query = query.filter(
-            Product.category.ilike(category)
-        )
+        query = query.filter(Product.category.ilike(category))
 
     if min_price is not None:
-
-        query = query.filter(
-            Product.price >= min_price
-        )
+        query = query.filter(Product.price >= min_price)
 
     if max_price is not None:
-
-        query = query.filter(
-            Product.price <= max_price
-        )
+        query = query.filter(Product.price <= max_price)
 
     if sort == "low_to_high":
-
-        query = query.order_by(
-            asc(Product.price),
-            asc(Product.id)
-        )
-
+        query = query.order_by(asc(Product.price), asc(Product.id))
     elif sort == "high_to_low":
-
-        query = query.order_by(
-            desc(Product.price),
-            asc(Product.id)
-        )
-
+        query = query.order_by(desc(Product.price), asc(Product.id))
     else:
-
-        query = query.order_by(
-            asc(Product.id)
-        )
+        query = query.order_by(asc(Product.id))
 
     products = query.all()
 
     return {
-
         "success": True,
-
         "message": "Filtered products fetched successfully",
-
-        "data": [
-
-            ProductResponse.model_validate(product)
-
-            for product in products
-
-        ]
-
+        "data": [ProductResponse.model_validate(product) for product in products],
     }
 
 
-@router.get("/products/{product_id}")
+@router.get("/products/{product_id}", tags=["Products"])
 def get_product(
     product_id: int,
-    db: Session = Depends(get_db)
-):
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Fetch product details by ID with Redis caching."""
     cache_key = f"product:{product_id}"
-
     cached_product = redis_client.get(cache_key)
 
     if cached_product:
-        print("Product cache hit")
+        logger.info("Product cache hit")
         return json.loads(cached_product)
 
-    product = db.query(Product).filter(
-        Product.id == product_id
-    ).first()
-
+    product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(
-            status_code=404,
-            detail={
-                "success": False,
-                "message": "Product not found"
-            }
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"success": False, "message": "Product not found"},
         )
 
     response = {
         "success": True,
         "message": "Product fetched successfully",
-        "data": ProductResponse.model_validate(product).model_dump()
+        "data": ProductResponse.model_validate(product).model_dump(),
     }
 
-    redis_client.set(
-        cache_key,
-        json.dumps(response),
-        ex=3600
-    )
-
+    redis_client.set(cache_key, json.dumps(response), ex=3600)
     return response
 
-@router.post(
-    "/products/{product_id}/view",
-    tags=["Products"]
-)
+
+@router.post("/products/{product_id}/view", tags=["Products"])
 def track_product_view(
     product_id: int,
-    current_user: User = Depends(get_current_user)
-):
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Track recently viewed product for current user."""
     recent_key = f"recent:user:{current_user.id}"
 
-    redis_client.lrem(
-        recent_key,
-        0,
-        str(product_id)
-    )
+    redis_client.lrem(recent_key, 0, str(product_id))
+    redis_client.lpush(recent_key, str(product_id))
+    redis_client.ltrim(recent_key, 0, 9)
+    redis_client.expire(recent_key, 604800)
 
-    redis_client.lpush(
-        recent_key,
-        str(product_id)
-    )
+    return {"success": True, "message": "Product view tracked"}
 
-    redis_client.ltrim(
-        recent_key,
-        0,
-        9
-    )
 
-    redis_client.expire(
-        recent_key,
-        604800
-    )
-
-    return {
-        "success": True,
-        "message": "Product view tracked"
-    }
-
-@router.get(
-    "/products/recent/viewed",
-    tags=["Products"]
-)
+@router.get("/products/recent/viewed", tags=["Products"])
 def get_recently_viewed_products(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Fetch list of recently viewed products for current user."""
     recent_key = f"recent:user:{current_user.id}"
+    product_ids = redis_client.lrange(recent_key, 0, -1)
 
-    product_ids = redis_client.lrange(
-        recent_key,
-        0,
-        -1
-    )
-
-    products = db.query(Product).filter(
-        Product.id.in_(product_ids)
-    ).all()
-
-    product_map = {
-        str(product.id): product
-        for product in products
-    }
+    products = db.query(Product).filter(Product.id.in_(product_ids)).all()
+    product_map = {str(product.id): product for product in products}
 
     ordered_products = []
-
-    for product_id in product_ids:
-        product = product_map.get(product_id)
-
+    for pid in product_ids:
+        product = product_map.get(pid)
         if product:
-            ordered_products.append(
-                ProductResponse.model_validate(product)
-            )
+            ordered_products.append(ProductResponse.model_validate(product))
 
     return {
         "success": True,
         "message": "Recently viewed products fetched successfully",
-        "data": ordered_products
+        "data": ordered_products,
     }
 
-@router.get(
-    "/products/search/",
-    tags=["Products"]
-)
 
+@router.get("/products/search/", tags=["Products"])
 def search_products(
-
     query: str = Query(...),
-
-    db: Session = Depends(get_db)
-
-):
-
-    products = db.query(Product).filter(
-
-        Product.title.ilike(f"%{query}%")
-
-    ).order_by(
-        asc(Product.id)
-    ).all()
-
-    return {
-
-        "success": True,
-
-        "message": "Search results fetched successfully",
-
-        "data": [
-
-            ProductResponse.model_validate(product)
-
-            for product in products
-
-        ]
-
-    }
-
-
-@router.get(
-    "/products/category/{category_name}",
-    tags=["Products"]
-)
-
-def get_products_by_category(
-
-    category_name: str,
-
-    db: Session = Depends(get_db)
-
-):
-
-    products = db.query(Product).filter(
-
-        Product.category.ilike(category_name)
-
-    ).order_by(
-        asc(Product.id)
-    ).all()
-
-    return {
-
-        "success": True,
-
-        "message": "Category products fetched successfully",
-
-        "data": [
-
-            ProductResponse.model_validate(product)
-
-            for product in products
-
-        ]
-
-    }
-
-
-@router.put(
-    "/products/{product_id}",
-    tags=["Products"]
-)
-
-def update_product(
-
-    product_id: int,
-
-    updated_product: ProductSchema,
-
     db: Session = Depends(get_db),
-
-    current_admin: User = Depends(
-        get_current_admin
+) -> dict[str, Any]:
+    """Search products by title keyword."""
+    products = (
+        db.query(Product)
+        .filter(Product.title.ilike(f"%{query}%"))
+        .order_by(asc(Product.id))
+        .all()
     )
 
-):
+    return {
+        "success": True,
+        "message": "Search results fetched successfully",
+        "data": [ProductResponse.model_validate(product) for product in products],
+    }
 
-    product = db.query(Product).filter(
-        Product.id == product_id
-    ).first()
 
+@router.get("/products/category/{category_name}", tags=["Products"])
+def get_products_by_category(
+    category_name: str,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Fetch products matching a specific category name."""
+    products = (
+        db.query(Product)
+        .filter(Product.category.ilike(category_name))
+        .order_by(asc(Product.id))
+        .all()
+    )
+
+    return {
+        "success": True,
+        "message": "Category products fetched successfully",
+        "data": [ProductResponse.model_validate(product) for product in products],
+    }
+
+
+@router.put("/products/{product_id}", tags=["Products"])
+def update_product(
+    product_id: int,
+    updated_product: ProductSchema,
+    db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+) -> dict[str, Any]:
+    """Update product information (Admin only)."""
+    product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
-
         raise HTTPException(
-
-            status_code=404,
-
-            detail={
-
-                "success": False,
-
-                "message": "Product not found"
-
-            }
-
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"success": False, "message": "Product not found"},
         )
 
     product.title = updated_product.title
@@ -471,180 +267,94 @@ def update_product(
     product.category = updated_product.category
 
     db.commit()
-
     db.refresh(product)
+
     try:
         for key in redis_client.scan_iter("product:*"):
             redis_client.delete(key)
-
         for key in redis_client.scan_iter("products:*"):
             redis_client.delete(key)
     except Exception as e:
-        print("Redis cache clear warning:", e)
+        logger.warning(f"Redis cache clear warning: {e}")
 
     return {
-
         "success": True,
-
         "message": "Product updated successfully",
-
-        "data": ProductResponse.model_validate(product)
-
+        "data": ProductResponse.model_validate(product),
     }
 
 
-@router.delete(
-    "/products/{product_id}",
-    tags=["Products"]
-)
-
+@router.delete("/products/{product_id}", tags=["Products"])
 def delete_product(
-
     product_id: int,
-
     db: Session = Depends(get_db),
-
-    current_admin: User = Depends(
-        get_current_admin
-    )
-
-):
-
-    product = db.query(Product).filter(
-        Product.id == product_id
-    ).first()
-
+    current_admin: User = Depends(get_current_admin),
+) -> dict[str, Any]:
+    """Delete a product from the inventory (Admin only)."""
+    product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
-
         raise HTTPException(
-
-            status_code=404,
-
-            detail={
-
-                "success": False,
-
-                "message": "Product not found"
-
-            }
-
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"success": False, "message": "Product not found"},
         )
 
     db.delete(product)
-
     db.commit()
 
     for key in redis_client.scan_iter("product:*"):
         redis_client.delete(key)
-
     for key in redis_client.scan_iter("products:*"):
         redis_client.delete(key)
 
-    return {
-
-        "success": True,
-
-        "message": "Product deleted successfully"
-
-    }
+    return {"success": True, "message": "Product deleted successfully"}
 
 
-@router.post(
-    "/upload-image",
-    tags=["Products"]
-)
+@router.post("/upload-image", tags=["Products"])
 def upload_image(
     file: UploadFile = File(...),
-    current_admin: User = Depends(
-        get_current_admin
-    )
-):
-    result = cloudinary.uploader.upload(
-        file.file,
-        folder="ekart"
-    )
-
+    current_admin: User = Depends(get_current_admin),
+) -> dict[str, Any]:
+    """Upload product image file to Cloudinary."""
+    result = cloudinary.uploader.upload(file.file, folder="ekart")
     return {
         "success": True,
         "message": "Image uploaded successfully",
-        "data": {
-            "image_url": result[
-                "secure_url"
-            ]
-        }
+        "data": {"image_url": result["secure_url"]},
     }
 
-@router.post(
-    "/products/{product_id}/review",
-    tags=["Reviews"]
-)
 
+@router.post("/products/{product_id}/review", tags=["Reviews"])
 def add_review(
-
     product_id: int,
-
     review: ReviewSchema,
-
     db: Session = Depends(get_db),
-
-    current_user: User = Depends(
-        get_current_user
-    )
-
-):
-
-    product = db.query(Product).filter(
-        Product.id == product_id
-    ).first()
-
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Submit a rating review for a product."""
+    product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
-
         raise HTTPException(
-
-            status_code=404,
-
-            detail={
-
-                "success": False,
-
-                "message": "Product not found"
-
-            }
-
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"success": False, "message": "Product not found"},
         )
 
     new_review = Review(
-
         comment=review.comment,
-
         rating=review.rating,
-
         user_id=current_user.id,
-
-        product_id=product.id
-
+        product_id=product.id,
     )
 
     db.add(new_review)
-
     db.commit()
-
     db.refresh(new_review)
 
     return {
-
         "success": True,
-
         "message": "Review added successfully",
-
         "data": {
-
             "review_id": new_review.id,
-
             "rating": new_review.rating,
-
-            "comment": new_review.comment
-
-        }
-
+            "comment": new_review.comment,
+        },
     }

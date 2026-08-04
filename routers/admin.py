@@ -1,107 +1,119 @@
-from fastapi import APIRouter, Depends, HTTPException, Body, BackgroundTasks
+"""Administrative management and store dashboard router endpoints."""
+
+import logging
+from typing import Any
+
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from database import get_db
-from models import (
-    User,
-    Product,
-    Order,
-    Address
-)
-from routers.auth import get_current_admin
+
+from db.session import get_db
+from dependencies.auth import get_current_admin
+from models import Address, Order, Product, User
 from tasks.email_tasks import (
+    send_order_cancelled,
+    send_order_delivered,
     send_order_shipped,
     send_out_for_delivery,
-    send_order_delivered,
-    send_order_cancelled
 )
 
-router = APIRouter(
-    prefix="/admin",
-    tags=["Admin"]
-)
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/admin", tags=["Admin"])
+
 
 @router.get("/dashboard")
 def admin_dashboard(
     db: Session = Depends(get_db),
-    admin=Depends(get_current_admin)
-):
+    admin: User = Depends(get_current_admin),
+) -> dict[str, Any]:
+    """Return high-level administration overview metrics."""
     total_users = db.query(User).count()
     total_products = db.query(Product).count()
     total_orders = db.query(Order).count()
-    total_revenue = sum(
-        (order.total_price or 0)
-        for order in db.query(Order).all()
-    )
+    total_revenue = sum((order.total_price or 0) for order in db.query(Order).all())
 
     return {
         "total_users": total_users,
         "total_products": total_products,
         "total_orders": total_orders,
-        "total_revenue": total_revenue
+        "total_revenue": total_revenue,
     }
 
-def _build_orders_list(db: Session):
+
+def _build_orders_list(db: Session) -> list[dict[str, Any]]:
+    """Helper method to format all customer orders for admin views."""
     orders = db.query(Order).order_by(Order.created_at.desc()).all()
     orders_list = []
     for order in orders:
         items = []
         for item in order.items:
             prod = item.product
-            items.append({
-                "product_id": item.product_id,
-                "product_title": prod.title if prod else "Product",
-                "price": prod.price if prod else 0,
-                "image": prod.image if prod else None,
-                "quantity": item.quantity
-            })
+            items.append(
+                {
+                    "product_id": item.product_id,
+                    "product_title": prod.title if prod else "Product",
+                    "price": prod.price if prod else 0,
+                    "image": prod.image if prod else None,
+                    "quantity": item.quantity,
+                }
+            )
 
         user_obj = order.user
         addr_obj = db.query(Address).filter(Address.user_id == order.user_id).first()
-        address_str = f"{addr_obj.full_name}, {addr_obj.address_line}, {addr_obj.city}, {addr_obj.state} - {addr_obj.pincode}" if addr_obj else "No shipping address provided"
+        address_str = (
+            f"{addr_obj.full_name}, {addr_obj.address_line}, {addr_obj.city}, {addr_obj.state} - {addr_obj.pincode}"
+            if addr_obj
+            else "No shipping address provided"
+        )
 
-        orders_list.append({
-            "id": order.id,
-            "order_id": order.id,
-            "user_id": order.user_id,
-            "user_name": user_obj.username if user_obj else "Unknown User",
-            "user_email": user_obj.email if user_obj else "N/A",
-            "total_price": order.total_price,
-            "status": getattr(order, "status", "PROCESSING") or "PROCESSING",
-            "shipping_address": address_str,
-            "created_at": order.created_at,
-            "products": items,
-            "items": items
-        })
+        orders_list.append(
+            {
+                "id": order.id,
+                "order_id": order.id,
+                "user_id": order.user_id,
+                "user_name": user_obj.username if user_obj else "Unknown User",
+                "user_email": user_obj.email if user_obj else "N/A",
+                "total_price": order.total_price,
+                "status": getattr(order, "status", "PROCESSING") or "PROCESSING",
+                "shipping_address": address_str,
+                "created_at": order.created_at,
+                "products": items,
+                "items": items,
+            }
+        )
     return orders_list
+
 
 @router.get("/orders")
 @router.get("/all-orders")
 def get_all_orders(
     db: Session = Depends(get_db),
-    admin=Depends(get_current_admin)
-):
+    admin: User = Depends(get_current_admin),
+) -> list[dict[str, Any]]:
+    """Fetch all customer orders for store administrator."""
     return _build_orders_list(db)
+
 
 @router.put("/orders/{order_id}/status")
 def update_admin_order_status(
     order_id: int,
     background_tasks: BackgroundTasks,
-    status: str = Body(..., embed=True),
+    status_str: str = Body(..., embed=True, alias="status"),
     db: Session = Depends(get_db),
-    admin=Depends(get_current_admin)
-):
+    admin: User = Depends(get_current_admin),
+) -> dict[str, Any]:
+    """Update order fulfillment status and queue customer status notification email."""
     order = db.query(Order).filter(Order.id == order_id).first()
     if not order:
         raise HTTPException(
-            status_code=404,
-            detail={"success": False, "message": "Order not found"}
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"success": False, "message": "Order not found"},
         )
 
-    upper_status = status.upper().strip()
+    upper_status = status_str.upper().strip()
     order.status = upper_status
     db.commit()
 
-    # Trigger corresponding status email tasks via BackgroundTasks
     try:
         if upper_status == "SHIPPED":
             background_tasks.add_task(send_order_shipped, order.id)
@@ -112,20 +124,22 @@ def update_admin_order_status(
         elif upper_status == "CANCELLED":
             background_tasks.add_task(send_order_cancelled, order.id)
     except Exception as e:
-        print("[Admin Order Status Email Warning]:", e)
+        logger.warning(f"[Admin Order Status Email Warning]: {e}")
 
     return {
         "success": True,
         "message": f"Order #{order_id} status updated to {upper_status}",
         "order_id": order.id,
-        "status": upper_status
+        "status": upper_status,
     }
+
 
 @router.get("/users")
 def get_all_users(
     db: Session = Depends(get_db),
-    admin=Depends(get_current_admin)
-):
+    admin: User = Depends(get_current_admin),
+) -> list[dict[str, Any]]:
+    """Fetch all registered user accounts for store administrator."""
     users = db.query(User).all()
     return [
         {
@@ -133,7 +147,7 @@ def get_all_users(
             "username": user.username,
             "email": user.email,
             "is_admin": user.is_admin,
-            "created_at": user.created_at
+            "created_at": user.created_at,
         }
         for user in users
-    ]
+    ]

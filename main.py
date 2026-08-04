@@ -1,58 +1,44 @@
-from fastapi import FastAPI,Depends
+"""Main FastAPI application entry point for E-Kart backend."""
 
-from database import engine
-
-from sqlalchemy.orm import Session
-
-from database import get_db
-
-import models
-
-from routers import admin
-
-from routers import address
-
+import logging
 import os
-
-from fastapi.middleware.cors import CORSMiddleware
+from typing import Any
 
 import razorpay
-
 from dotenv import load_dotenv
+from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
 
-from pydantic import BaseModel
-
+import models
+from db.session import engine, get_db
 from models import User
-
 from routers import (
-    products,
+    address,
+    admin,
     auth,
     cart,
+    health,
     orders,
     payments,
-    address,
+    products,
     wishlist,
-    health
 )
+from schemas import OrderRequest
 
 load_dotenv()
 
-class OrderRequest(BaseModel):
-    amount: int
+logger = logging.getLogger(__name__)
 
+# Initialize Razorpay Client
 razorpay_key_id = os.getenv("RAZORPAY_KEY_ID", "")
 razorpay_key_secret = os.getenv("RAZORPAY_KEY_SECRET", "")
+client = razorpay.Client(auth=(razorpay_key_id, razorpay_key_secret))
 
-client = razorpay.Client(
-    auth=(
-        razorpay_key_id,
-        razorpay_key_secret
-    )
-)
+# Initialize FastAPI App
+app = FastAPI(title="E-Kart API", version="1.0.0")
 
-
-app = FastAPI()
-
+# Configure CORS Middleware
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -76,6 +62,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Register API Routers
 app.include_router(health.router)
 app.include_router(products.router)
 app.include_router(auth.router)
@@ -86,38 +73,45 @@ app.include_router(address.router)
 app.include_router(admin.router)
 app.include_router(wishlist.router)
 
+# Database Startup Metadata Creation
 try:
     models.Base.metadata.create_all(bind=engine)
-    print("[Database] Tables created/verified successfully.")
+    logger.info("[Database] Tables created/verified successfully.")
 except Exception as e:
-    print(f"[Database Warning] Table creation skipped or failed on startup: {e}")
+    logger.warning(
+        f"[Database Warning] Table creation skipped or failed on startup: {e}"
+    )
+
 
 @app.get("/")
-def home():
-    return {
-        "message": "E-KART Backend Running"
-    }
+def home() -> dict[str, str]:
+    """Root health check endpoint."""
+    return {"message": "E-KART Backend Running"}
+
 
 @app.post("/create-order")
-def create_order(data: OrderRequest):
-    order = client.order.create({
-        "amount": data.amount * 100,
-        "currency": "INR",
-        "payment_capture": 1
-    })
-
+def create_order(data: OrderRequest) -> dict[str, Any]:
+    """Legacy endpoint for creating Razorpay payment orders."""
+    order = client.order.create(
+        {
+            "amount": data.amount * 100,
+            "currency": "INR",
+            "payment_capture": 1,
+        }
+    )
     return order
 
-@app.get("/users")
-def get_users(db: Session = Depends(get_db)):
-    users = db.query(User).all()
 
+@app.get("/users")
+def get_users(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    """Legacy public endpoint returning registered user list."""
+    users = db.query(User).all()
     return [
         {
             "id": user.id,
             "username": user.username,
             "email": user.email,
-            "is_admin": user.is_admin
+            "is_admin": user.is_admin,
         }
         for user in users
     ]
