@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Path, status
 from sqlalchemy.orm import Session
 
 from db.session import get_db
@@ -18,7 +18,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/cart", tags=["Cart"])
+@router.post(
+    "/cart",
+    summary="Add Product to Cart",
+    description="Add a product item to the authenticated user's cart or increment quantity if already added.",
+    response_description="Created or updated cart item details",
+    tags=["Cart"],
+    responses={
+        200: {"description": "Product added to cart or quantity updated."},
+        401: {"description": "Unauthorized."},
+        404: {"description": "Product not found."},
+    },
+)
 def add_to_cart(
     cart: CartSchema,
     db: Session = Depends(get_db),
@@ -78,7 +89,17 @@ def add_to_cart(
     }
 
 
-@router.get("/cart", tags=["Cart"])
+@router.get(
+    "/cart",
+    summary="Get User Cart Items",
+    description="Retrieve all cart items for the authenticated user. Utilizes Redis caching.",
+    response_description="Array of cart items with product metadata",
+    tags=["Cart"],
+    responses={
+        200: {"description": "Cart items array retrieved successfully."},
+        401: {"description": "Unauthorized."},
+    },
+)
 def get_user_cart(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -117,7 +138,17 @@ def get_user_cart(
     return response
 
 
-@router.delete("/cart/clear", tags=["Cart"])
+@router.delete(
+    "/cart/clear",
+    summary="Clear Entire Cart",
+    description="Remove all items from authenticated user's cart and invalidate Redis cache.",
+    response_description="Empty cart array confirmation",
+    tags=["Cart"],
+    responses={
+        200: {"description": "Cart cleared successfully."},
+        401: {"description": "Unauthorized."},
+    },
+)
 def clear_user_cart(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -140,9 +171,22 @@ def clear_user_cart(
     }
 
 
-@router.delete("/cart/{cart_id}", tags=["Cart"])
+@router.delete(
+    "/cart/{cart_id}",
+    summary="Remove Single Cart Item",
+    description="Delete a specific cart item by ID from user's shopping cart.",
+    response_description="Removal confirmation message",
+    tags=["Cart"],
+    responses={
+        200: {"description": "Item removed from cart."},
+        401: {"description": "Unauthorized."},
+        404: {"description": "Cart item not found."},
+    },
+)
 def remove_from_cart(
-    cart_id: int,
+    cart_id: int = Path(
+        ..., title="Cart Item ID", description="Cart item ID to remove", example=10
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
@@ -166,10 +210,23 @@ def remove_from_cart(
     return {"success": True, "message": "Item removed from cart"}
 
 
-@router.put("/cart/{cart_id}", tags=["Cart"])
+@router.put(
+    "/cart/{cart_id}",
+    summary="Update Cart Item Quantity",
+    description="Update quantity count for a specific item in user's cart.",
+    response_description="Updated cart item payload",
+    tags=["Cart"],
+    responses={
+        200: {"description": "Cart quantity updated successfully."},
+        401: {"description": "Unauthorized."},
+        404: {"description": "Cart item not found."},
+    },
+)
 def update_cart_quantity(
-    cart_id: int,
-    updated_cart: UpdateCartSchema,
+    cart_id: int = Path(
+        ..., title="Cart Item ID", description="Cart item ID to update", example=10
+    ),
+    updated_cart: UpdateCartSchema = ...,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:

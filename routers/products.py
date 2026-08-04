@@ -11,6 +11,7 @@ from fastapi import (
     Depends,
     File,
     HTTPException,
+    Path,
     Query,
     UploadFile,
     status,
@@ -29,7 +30,19 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/products", tags=["Products"])
+@router.post(
+    "/products",
+    status_code=status.HTTP_200_OK,
+    summary="Create Product (Admin Only)",
+    description="Create a new product record in the catalog and invalidate Redis product caches. Requires Admin JWT Bearer authentication.",
+    response_description="Created product metadata",
+    tags=["Products"],
+    responses={
+        200: {"description": "Product created successfully."},
+        401: {"description": "Unauthorized."},
+        403: {"description": "Forbidden: Requires Admin privileges."},
+    },
+)
 def create_product(
     product: ProductSchema,
     db: Session = Depends(get_db),
@@ -66,10 +79,19 @@ def create_product(
     }
 
 
-@router.get("/products", tags=["Products"])
+@router.get(
+    "/products",
+    summary="List Products (Paginated)",
+    description="Retrieve catalog products using page and limit parameters. Uses Redis Cache-Aside pattern (1 hour expiration).",
+    response_description="Paginated array of product objects",
+    tags=["Products"],
+    responses={200: {"description": "List of product objects returned successfully."}},
+)
 def get_products(
-    page: int = 1,
-    limit: int = 5,
+    page: int = Query(1, description="Page index (1-based)", example=1, ge=1),
+    limit: int = Query(
+        5, description="Number of products per page", example=5, ge=1, le=100
+    ),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Fetch paginated products list with Redis caching."""
@@ -98,12 +120,29 @@ def get_products(
     return response
 
 
-@router.get("/products/filter", tags=["Products"])
+@router.get(
+    "/products/filter",
+    summary="Filter & Sort Products",
+    description="Filter catalog products by category, price range, and sort order (low_to_high or high_to_low).",
+    response_description="Filtered product items array",
+    tags=["Products"],
+    responses={200: {"description": "Filtered products array retrieved."}},
+)
 def filter_products(
-    category: str | None = None,
-    min_price: float | None = None,
-    max_price: float | None = None,
-    sort: str | None = None,
+    category: str | None = Query(
+        None, description="Category name (e.g. Mobiles, Laptops)", example="Mobiles"
+    ),
+    min_price: float | None = Query(
+        None, description="Minimum price filter (INR)", example=10000.0
+    ),
+    max_price: float | None = Query(
+        None, description="Maximum price filter (INR)", example=80000.0
+    ),
+    sort: str | None = Query(
+        None,
+        description="Price sorting strategy: 'low_to_high' or 'high_to_low'",
+        example="low_to_high",
+    ),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Filter and sort product catalog by category, price range, and order."""
@@ -134,9 +173,21 @@ def filter_products(
     }
 
 
-@router.get("/products/{product_id}", tags=["Products"])
+@router.get(
+    "/products/{product_id}",
+    summary="Get Product Details by ID",
+    description="Retrieve complete specifications for a single product by ID. Utilizes Redis caching.",
+    response_description="Single product details object",
+    tags=["Products"],
+    responses={
+        200: {"description": "Product details returned."},
+        404: {"description": "Product not found."},
+    },
+)
 def get_product(
-    product_id: int,
+    product_id: int = Path(
+        ..., title="Product ID", description="Unique identifier of product", example=1
+    ),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Fetch product details by ID with Redis caching."""
@@ -164,9 +215,21 @@ def get_product(
     return response
 
 
-@router.post("/products/{product_id}/view", tags=["Products"])
+@router.post(
+    "/products/{product_id}/view",
+    summary="Track Recently Viewed Product",
+    description="Push a product ID to the user's recently viewed list stored in Redis.",
+    response_description="Tracking confirmation",
+    tags=["Products"],
+    responses={
+        200: {"description": "View logged in user's Redis tracking history."},
+        401: {"description": "Unauthorized."},
+    },
+)
 def track_product_view(
-    product_id: int,
+    product_id: int = Path(
+        ..., title="Product ID", description="Product ID to record", example=1
+    ),
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Track recently viewed product for current user."""
@@ -180,7 +243,17 @@ def track_product_view(
     return {"success": True, "message": "Product view tracked"}
 
 
-@router.get("/products/recent/viewed", tags=["Products"])
+@router.get(
+    "/products/recent/viewed",
+    summary="Get Recently Viewed Products",
+    description="Retrieve up to 10 recently viewed products for the authenticated user from Redis history.",
+    response_description="List of recently viewed products",
+    tags=["Products"],
+    responses={
+        200: {"description": "Recently viewed items array."},
+        401: {"description": "Unauthorized."},
+    },
+)
 def get_recently_viewed_products(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -205,9 +278,16 @@ def get_recently_viewed_products(
     }
 
 
-@router.get("/products/search/", tags=["Products"])
+@router.get(
+    "/products/search/",
+    summary="Search Products by Keyword",
+    description="Perform case-insensitive title search on products catalog.",
+    response_description="Array of matching products",
+    tags=["Products"],
+    responses={200: {"description": "Search results returned."}},
+)
 def search_products(
-    query: str = Query(...),
+    query: str = Query(..., description="Search keyword query", example="oneplus"),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Search products by title keyword."""
@@ -225,9 +305,18 @@ def search_products(
     }
 
 
-@router.get("/products/category/{category_name}", tags=["Products"])
+@router.get(
+    "/products/category/{category_name}",
+    summary="Get Products by Category",
+    description="Retrieve all products belonging to a specified category name.",
+    response_description="Array of category products",
+    tags=["Products"],
+    responses={200: {"description": "Category products returned."}},
+)
 def get_products_by_category(
-    category_name: str,
+    category_name: str = Path(
+        ..., title="Category Name", description="Target category", example="Mobiles"
+    ),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Fetch products matching a specific category name."""
@@ -245,10 +334,24 @@ def get_products_by_category(
     }
 
 
-@router.put("/products/{product_id}", tags=["Products"])
+@router.put(
+    "/products/{product_id}",
+    summary="Update Product (Admin Only)",
+    description="Update existing product attributes (title, price, image, category) and invalidate Redis cache.",
+    response_description="Updated product object",
+    tags=["Products"],
+    responses={
+        200: {"description": "Product updated successfully."},
+        401: {"description": "Unauthorized."},
+        403: {"description": "Forbidden: Requires Admin privileges."},
+        404: {"description": "Product not found."},
+    },
+)
 def update_product(
-    product_id: int,
-    updated_product: ProductSchema,
+    product_id: int = Path(
+        ..., title="Product ID", description="Product ID to modify", example=1
+    ),
+    updated_product: ProductSchema = ...,
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_current_admin),
 ) -> dict[str, Any]:
@@ -284,9 +387,23 @@ def update_product(
     }
 
 
-@router.delete("/products/{product_id}", tags=["Products"])
+@router.delete(
+    "/products/{product_id}",
+    summary="Delete Product (Admin Only)",
+    description="Permanently remove product from inventory and clear cache.",
+    response_description="Deletion confirmation message",
+    tags=["Products"],
+    responses={
+        200: {"description": "Product deleted successfully."},
+        401: {"description": "Unauthorized."},
+        403: {"description": "Forbidden: Admin required."},
+        404: {"description": "Product not found."},
+    },
+)
 def delete_product(
-    product_id: int,
+    product_id: int = Path(
+        ..., title="Product ID", description="Product ID to delete", example=1
+    ),
     db: Session = Depends(get_db),
     current_admin: User = Depends(get_current_admin),
 ) -> dict[str, Any]:
@@ -309,9 +426,20 @@ def delete_product(
     return {"success": True, "message": "Product deleted successfully"}
 
 
-@router.post("/upload-image", tags=["Products"])
+@router.post(
+    "/upload-image",
+    summary="Upload Image to Cloudinary CDN (Admin Only)",
+    description="Upload multipart/form-data image file to Cloudinary CDN storage and return secure image URL.",
+    response_description="Cloudinary secure image URL object",
+    tags=["Products"],
+    responses={
+        200: {"description": "Image uploaded successfully."},
+        401: {"description": "Unauthorized."},
+        403: {"description": "Forbidden: Requires Admin privileges."},
+    },
+)
 def upload_image(
-    file: UploadFile = File(...),
+    file: UploadFile = File(..., description="Multipart image file (JPEG, PNG, WebP)"),
     current_admin: User = Depends(get_current_admin),
 ) -> dict[str, Any]:
     """Upload product image file to Cloudinary."""
@@ -323,10 +451,23 @@ def upload_image(
     }
 
 
-@router.post("/products/{product_id}/review", tags=["Reviews"])
+@router.post(
+    "/products/{product_id}/review",
+    summary="Add Product Review",
+    description="Submit a 1-5 star review and comment for a product. Requires user authentication.",
+    response_description="Created review object",
+    tags=["Products"],
+    responses={
+        200: {"description": "Review added successfully."},
+        401: {"description": "Unauthorized."},
+        404: {"description": "Product not found."},
+    },
+)
 def add_review(
-    product_id: int,
-    review: ReviewSchema,
+    product_id: int = Path(
+        ..., title="Product ID", description="Target product ID for review", example=1
+    ),
+    review: ReviewSchema = ...,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:

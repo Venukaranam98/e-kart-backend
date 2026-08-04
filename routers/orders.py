@@ -3,7 +3,15 @@
 import logging
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Body,
+    Depends,
+    HTTPException,
+    Path,
+    status,
+)
 from sqlalchemy.orm import Session
 
 from constants.app_constants import LOW_STOCK_THRESHOLD
@@ -25,7 +33,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/checkout", tags=["Orders"])
+@router.post(
+    "/checkout",
+    summary="Checkout Cart & Place Order",
+    description="Convert items in authenticated user's cart into a new order record, decrement product stock, clear cart, and queue order confirmation email.",
+    response_description="Created order payload summary",
+    tags=["Orders"],
+    responses={
+        200: {"description": "Order placed successfully."},
+        400: {"description": "Cart is empty."},
+        401: {"description": "Unauthorized."},
+    },
+)
 def checkout(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
@@ -100,8 +119,18 @@ def checkout(
     }
 
 
-@router.get("/orders", tags=["Orders"])
-@router.get("/all-orders", tags=["Orders"])
+@router.get(
+    "/orders",
+    summary="Get Order History",
+    description="Retrieve order placement history for current authenticated user (or all platform orders if user is Admin).",
+    response_description="Array of order records with nested item details",
+    tags=["Orders"],
+    responses={
+        200: {"description": "Order history retrieved successfully."},
+        401: {"description": "Unauthorized."},
+    },
+)
+@router.get("/all-orders", tags=["Orders"], include_in_schema=False)
 def get_user_orders(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -152,11 +181,29 @@ def get_user_orders(
     return order_response
 
 
-@router.put("/orders/{order_id}/status", tags=["Orders"])
+@router.put(
+    "/orders/{order_id}/status",
+    summary="Update Order Status",
+    description="Update status of an existing order (PROCESSING, SHIPPED, OUT_FOR_DELIVERY, DELIVERED, CANCELLED) and queue status update email notification.",
+    response_description="Updated order status object",
+    tags=["Orders"],
+    responses={
+        200: {"description": "Order status updated."},
+        404: {"description": "Order not found."},
+    },
+)
 def update_order_status(
-    order_id: int,
-    background_tasks: BackgroundTasks,
-    status_str: str = Body(..., embed=True, alias="status"),
+    order_id: int = Path(
+        ..., title="Order ID", description="Target order ID", example=101
+    ),
+    background_tasks: BackgroundTasks = ...,
+    status_str: str = Body(
+        ...,
+        embed=True,
+        alias="status",
+        description="New status string",
+        example="SHIPPED",
+    ),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Update order status and trigger customer email notifications."""

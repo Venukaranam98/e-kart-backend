@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Path, status
 from sqlalchemy.orm import Session
 
 from db.session import get_db
@@ -18,7 +18,19 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/wishlist", tags=["Wishlist"])
+@router.post(
+    "/wishlist",
+    summary="Add Product to Wishlist",
+    description="Save a product to current user's wishlist for later reference.",
+    response_description="Created wishlist item metadata",
+    tags=["Wishlist"],
+    responses={
+        200: {"description": "Product added to wishlist."},
+        400: {"description": "Product already in wishlist."},
+        401: {"description": "Unauthorized."},
+        404: {"description": "Product not found."},
+    },
+)
 def add_to_wishlist(
     wishlist: WishlistSchema,
     db: Session = Depends(get_db),
@@ -66,7 +78,17 @@ def add_to_wishlist(
     }
 
 
-@router.get("/wishlist", tags=["Wishlist"])
+@router.get(
+    "/wishlist",
+    summary="Get User Wishlist",
+    description="Retrieve all saved wishlist products for authenticated user. Utilizes Redis caching.",
+    response_description="Array of wishlist item objects",
+    tags=["Wishlist"],
+    responses={
+        200: {"description": "Wishlist fetched successfully."},
+        401: {"description": "Unauthorized."},
+    },
+)
 def get_user_wishlist(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -107,9 +129,22 @@ def get_user_wishlist(
     return response
 
 
-@router.delete("/wishlist/{wishlist_id}", tags=["Wishlist"])
+@router.delete(
+    "/wishlist/{wishlist_id}",
+    summary="Remove Wishlist Item by Wishlist ID",
+    description="Delete a specific item from wishlist using its wishlist record ID.",
+    response_description="Deletion confirmation message",
+    tags=["Wishlist"],
+    responses={
+        200: {"description": "Product removed from wishlist."},
+        401: {"description": "Unauthorized."},
+        404: {"description": "Wishlist item not found."},
+    },
+)
 def remove_from_wishlist(
-    wishlist_id: int,
+    wishlist_id: int = Path(
+        ..., title="Wishlist ID", description="Target wishlist item ID", example=5
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
@@ -138,7 +173,17 @@ def remove_from_wishlist(
     return {"success": True, "message": "Product removed from wishlist"}
 
 
-@router.delete("/wishlist", tags=["Wishlist"])
+@router.delete(
+    "/wishlist",
+    summary="Clear User Wishlist",
+    description="Remove all products from authenticated user's wishlist.",
+    response_description="Clear status confirmation message",
+    tags=["Wishlist"],
+    responses={
+        200: {"description": "Wishlist cleared successfully."},
+        401: {"description": "Unauthorized."},
+    },
+)
 def clear_user_wishlist(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -155,9 +200,25 @@ def clear_user_wishlist(
     return {"success": True, "message": "Wishlist cleared successfully"}
 
 
-@router.delete("/wishlist/product/{product_id}", tags=["Wishlist"])
+@router.delete(
+    "/wishlist/product/{product_id}",
+    summary="Remove Wishlist Item by Product ID",
+    description="Remove a product from user's wishlist using the product's catalog ID.",
+    response_description="Removal confirmation message",
+    tags=["Wishlist"],
+    responses={
+        200: {"description": "Product removed from wishlist."},
+        401: {"description": "Unauthorized."},
+        404: {"description": "Wishlist item not found."},
+    },
+)
 def remove_from_wishlist_by_product_id(
-    product_id: int,
+    product_id: int = Path(
+        ...,
+        title="Product ID",
+        description="Product ID to remove from wishlist",
+        example=1,
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:

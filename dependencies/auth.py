@@ -8,7 +8,7 @@ from core.security import verify_access_token
 from db.session import get_db
 from models import User
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
 
 def get_current_user(

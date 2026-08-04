@@ -3,7 +3,15 @@
 import logging
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Body,
+    Depends,
+    HTTPException,
+    Path,
+    status,
+)
 from sqlalchemy.orm import Session
 
 from db.session import get_db
@@ -21,7 +29,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
 
-@router.get("/dashboard")
+@router.get(
+    "/dashboard",
+    summary="Get Admin Dashboard Metrics (Admin Only)",
+    description="Retrieve system overview statistics: total registered users, catalog products count, total order volume, and total platform revenue. Requires Admin JWT authorization.",
+    response_description="Dashboard metrics object",
+    tags=["Admin"],
+    responses={
+        200: {"description": "Dashboard overview statistics."},
+        401: {"description": "Unauthorized."},
+        403: {"description": "Forbidden: Requires Admin privileges."},
+    },
+)
 def admin_dashboard(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin),
@@ -84,8 +103,19 @@ def _build_orders_list(db: Session) -> list[dict[str, Any]]:
     return orders_list
 
 
-@router.get("/orders")
-@router.get("/all-orders")
+@router.get(
+    "/orders",
+    summary="List All Orders (Admin Only)",
+    description="Retrieve all customer orders across the platform with shipping address and user details. Requires Admin authorization.",
+    response_description="Array of all platform orders",
+    tags=["Admin"],
+    responses={
+        200: {"description": "List of all customer orders."},
+        401: {"description": "Unauthorized."},
+        403: {"description": "Forbidden: Requires Admin privileges."},
+    },
+)
+@router.get("/all-orders", tags=["Admin"], include_in_schema=False)
 def get_all_orders(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin),
@@ -94,11 +124,31 @@ def get_all_orders(
     return _build_orders_list(db)
 
 
-@router.put("/orders/{order_id}/status")
+@router.put(
+    "/orders/{order_id}/status",
+    summary="Update Customer Order Status (Admin Only)",
+    description="Update fulfillment status of any customer order (PROCESSING, SHIPPED, OUT_FOR_DELIVERY, DELIVERED, CANCELLED) and trigger automated email notification.",
+    response_description="Status update confirmation",
+    tags=["Admin"],
+    responses={
+        200: {"description": "Order status updated."},
+        401: {"description": "Unauthorized."},
+        403: {"description": "Forbidden: Requires Admin privileges."},
+        404: {"description": "Order not found."},
+    },
+)
 def update_admin_order_status(
-    order_id: int,
-    background_tasks: BackgroundTasks,
-    status_str: str = Body(..., embed=True, alias="status"),
+    order_id: int = Path(
+        ..., title="Order ID", description="Target order ID", example=101
+    ),
+    background_tasks: BackgroundTasks = ...,
+    status_str: str = Body(
+        ...,
+        embed=True,
+        alias="status",
+        description="Target status string",
+        example="SHIPPED",
+    ),
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin),
 ) -> dict[str, Any]:
@@ -134,7 +184,18 @@ def update_admin_order_status(
     }
 
 
-@router.get("/users")
+@router.get(
+    "/users",
+    summary="List All Users (Admin Only)",
+    description="Retrieve all registered user accounts with administrative status and registration timestamp. Requires Admin privileges.",
+    response_description="Array of user objects",
+    tags=["Admin"],
+    responses={
+        200: {"description": "List of user accounts."},
+        401: {"description": "Unauthorized."},
+        403: {"description": "Forbidden: Requires Admin privileges."},
+    },
+)
 def get_all_users(
     db: Session = Depends(get_db),
     admin: User = Depends(get_current_admin),

@@ -53,7 +53,41 @@ router = APIRouter()
 @router.post(
     "/register",
     status_code=status.HTTP_201_CREATED,
+    summary="Register New User",
+    description="Create a new user account with username, email, and password. Asynchronously queues a welcome email.",
+    response_description="JWT token object and success confirmation",
     tags=["Authentication"],
+    responses={
+        201: {
+            "description": "User successfully created.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "success": True,
+                        "message": "Registration Successful",
+                        "data": {
+                            "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                            "token_type": "bearer",
+                        },
+                    }
+                }
+            },
+        },
+        400: {
+            "description": "Email already registered.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": {
+                            "success": False,
+                            "message": "Email already registered",
+                        }
+                    }
+                }
+            },
+        },
+        422: {"description": "Validation Error (missing or invalid payload)"},
+    },
 )
 def register(
     user: UserSchema,
@@ -100,8 +134,63 @@ def register(
     }
 
 
-@router.post("/login", tags=["Authentication"])
-@router.post("/auth/login", tags=["Authentication"])
+@router.post(
+    "/login",
+    summary="Authenticate User (Login)",
+    description="Authenticate registered user using email (username) and password. Protected by Redis rate limiting (max 5 failed attempts per 15 mins). Queues login alert notification.",
+    response_description="OAuth2 Bearer JWT Access Token payload",
+    tags=["Authentication"],
+    responses={
+        200: {
+            "description": "Authentication successful.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                        "token_type": "bearer",
+                    }
+                }
+            },
+        },
+        401: {
+            "description": "Invalid password credentials.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": {
+                            "success": False,
+                            "message": "Invalid password. 4 attempts remaining.",
+                        }
+                    }
+                }
+            },
+        },
+        404: {
+            "description": "User account not found.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": {"success": False, "message": "User not found"}
+                    }
+                }
+            },
+        },
+        429: {
+            "description": "Rate limit exceeded (too many login attempts).",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": {
+                            "success": False,
+                            "message": "Too many failed login attempts. Try again in 15 minutes.",
+                        }
+                    }
+                }
+            },
+        },
+    },
+)
+@router.post("/auth/login", tags=["Authentication"], include_in_schema=False)
 def login(
     req: Request,
     background_tasks: BackgroundTasks,
@@ -176,7 +265,26 @@ def login(
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-@router.post("/auth/forgot-password", tags=["Authentication"])
+@router.post(
+    "/auth/forgot-password",
+    summary="Request Password Reset Link",
+    description="Generate a secure single-use 15-minute reset token and dispatch an email reset link to user's registered inbox.",
+    response_description="Confirmation notice",
+    tags=["Authentication"],
+    responses={
+        200: {
+            "description": "Password reset email queued if account exists.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "success": True,
+                        "message": "If an account with that email exists, a password reset link has been sent to your inbox.",
+                    }
+                }
+            },
+        }
+    },
+)
 def forgot_password(
     payload: ForgotPasswordRequest,
     background_tasks: BackgroundTasks,
@@ -235,7 +343,39 @@ def forgot_password(
     }
 
 
-@router.post("/auth/reset-password", tags=["Authentication"])
+@router.post(
+    "/auth/reset-password",
+    summary="Reset User Password",
+    description="Update account password using a valid unexpired password reset token received via email.",
+    response_description="Password reset confirmation message",
+    tags=["Authentication"],
+    responses={
+        200: {
+            "description": "Password reset successful.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "success": True,
+                        "message": "Your password has been successfully reset. You can now log in with your new password.",
+                    }
+                }
+            },
+        },
+        400: {
+            "description": "Invalid or expired reset token.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": {
+                            "success": False,
+                            "message": "Invalid or expired password reset token. Please request a new link.",
+                        }
+                    }
+                }
+            },
+        },
+    },
+)
 def reset_password(
     payload: ResetPasswordRequest,
     background_tasks: BackgroundTasks,
@@ -289,14 +429,45 @@ def reset_password(
     }
 
 
-@router.post("/auth/logout", tags=["Authentication"])
+@router.post(
+    "/auth/logout",
+    summary="User Logout",
+    description="Logout user session.",
+    response_description="Logout status confirmation",
+    tags=["Authentication"],
+)
 def logout() -> dict[str, Any]:
     """User logout endpoint."""
     return {"success": True, "message": "Logged out successfully"}
 
 
-@router.get("/profile", tags=["Authentication"])
-@router.get("/auth/me", tags=["Authentication"])
+@router.get(
+    "/profile",
+    summary="Get Current User Profile",
+    description="Retrieve account details for authenticated user using Bearer JWT token.",
+    response_description="Authenticated user profile object",
+    tags=["Authentication"],
+    responses={
+        200: {
+            "description": "User profile fetched.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "success": True,
+                        "message": "Profile fetched successfully",
+                        "data": {
+                            "id": 1,
+                            "username": "john_doe",
+                            "email": "john@example.com",
+                        },
+                    }
+                }
+            },
+        },
+        401: {"description": "Unauthorized or expired JWT token."},
+    },
+)
+@router.get("/auth/me", tags=["Authentication"], include_in_schema=False)
 def get_profile(
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
@@ -312,7 +483,34 @@ def get_profile(
     }
 
 
-@router.get("/admin/profile", tags=["Authentication"])
+@router.get(
+    "/admin/profile",
+    summary="Get Admin Profile",
+    description="Retrieve administrative account details. Requires Admin JWT Bearer credentials (`is_admin=True`).",
+    response_description="Authenticated admin profile object",
+    tags=["Authentication"],
+    responses={
+        200: {
+            "description": "Admin profile fetched.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "success": True,
+                        "message": "Admin authorized successfully",
+                        "data": {
+                            "id": 1,
+                            "username": "admin_master",
+                            "email": "admin@ekarthub.com",
+                            "is_admin": True,
+                        },
+                    }
+                }
+            },
+        },
+        401: {"description": "Unauthorized."},
+        403: {"description": "Forbidden: Requires administrative privileges."},
+    },
+)
 def admin_profile(
     current_admin: User = Depends(get_current_admin),
 ) -> dict[str, Any]:
@@ -329,7 +527,13 @@ def admin_profile(
     }
 
 
-@router.get("/test-token")
+@router.get(
+    "/test-token",
+    summary="Test Token Secret Key Initialization",
+    description="Internal diagnostic endpoint verifying JWT secret key configuration.",
+    tags=["Authentication"],
+    include_in_schema=False,
+)
 def test_token() -> dict[str, Any]:
     """Utility endpoint to test secret key initialization."""
     from core.security import SECRET_KEY

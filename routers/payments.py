@@ -6,7 +6,7 @@ from typing import Any
 
 import razorpay
 from dotenv import load_dotenv
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from schemas import OrderRequest
 
@@ -21,7 +21,16 @@ client = razorpay.Client(
 )
 
 
-@router.post("/create-payment-order", tags=["Payments"])
+@router.post(
+    "/create-payment-order",
+    summary="Create Razorpay Payment Order",
+    description="Initialize a Razorpay payment order for online checkout and return the Razorpay order object (amount in paise).",
+    response_description="Razorpay order dictionary containing order ID and amount in paise",
+    tags=["Payments"],
+    responses={
+        200: {"description": "Payment order initialized successfully."},
+    },
+)
 def create_payment_order(data: OrderRequest) -> dict[str, Any]:
     """Create a new Razorpay payment order."""
     payment_order = client.order.create(
@@ -34,11 +43,26 @@ def create_payment_order(data: OrderRequest) -> dict[str, Any]:
     return payment_order
 
 
-@router.post("/verify-payment", tags=["Payments"])
+@router.post(
+    "/verify-payment",
+    summary="Verify Razorpay Payment Signature",
+    description="Verify HMAC SHA256 digital signature of a completed Razorpay payment transaction.",
+    response_description="Payment verification status result",
+    tags=["Payments"],
+    responses={
+        200: {"description": "Payment signature verification result."},
+    },
+)
 def verify_payment(
-    razorpay_order_id: str,
-    razorpay_payment_id: str,
-    razorpay_signature: str,
+    razorpay_order_id: str = Query(
+        ..., description="Razorpay Order ID", example="order_M123456789"
+    ),
+    razorpay_payment_id: str = Query(
+        ..., description="Razorpay Payment ID", example="pay_M987654321"
+    ),
+    razorpay_signature: str = Query(
+        ..., description="HMAC SHA256 Signature", example="9f8e7d6c5b4a3210..."
+    ),
 ) -> dict[str, Any]:
     """Verify signature of a completed Razorpay payment transaction."""
     try:
