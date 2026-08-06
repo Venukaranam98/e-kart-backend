@@ -40,11 +40,20 @@ A high-performance FastAPI backend for the E-Kart e-commerce platform, providing
 - Order Status Tracking (`PROCESSING`, `SHIPPED`, `OUT_FOR_DELIVERY`, `DELIVERED`, `CANCELLED`)
 - Automated Email Status Notifications queued via `BackgroundTasks`
 - Razorpay Payment Order Creation & HMAC SHA256 Digital Signature Verification
+- Request Idempotency Protection (`Idempotency-Key` header) for safe order placement & payment transactions
 
 ### Administration & Metrics
 - System Overview Metrics (`GET /admin/dashboard`)
 - Customer Orders Directory with formatted delivery addresses
 - Registered Users Directory
+
+### Request Idempotency & Safety
+- Dual-Tier Redis Fast Cache & PostgreSQL Database Storage (`IdempotencyRecord` table)
+- SHA256 Request Payload Hash Validation to detect payload mismatch for reused keys
+- 24-Hour Automated Key Expiration (`IDEMPOTENCY_EXPIRE_HOURS = 24`)
+- Concurrency Lock Management returning HTTP 409 Conflict for in-flight requests
+- Error Handling with automatic key lock removal on execution failure to enable safe client retries
+- Applied across critical state-changing endpoints: `/checkout`, `/create-payment-order`, `/verify-payment`
 
 ---
 
@@ -63,6 +72,7 @@ backend/
 │   └── __init__.py
 ├── dependencies/
 │   ├── auth.py
+│   ├── idempotency.py
 │   └── __init__.py
 ├── docs/
 │   ├── README.md
@@ -94,10 +104,19 @@ backend/
 │   ├── payments.py
 │   ├── products.py
 │   └── wishlist.py
+├── scripts/
+│   └── list_admins.py
 ├── services/
-│   └── email_service.py
+│   ├── email_service.py
+│   ├── idempotency_service.py
+│   └── order_service.py
 ├── tasks/
 │   └── email_tasks.py
+├── templates/
+│   └── emails/
+├── tests/
+│   ├── test_address.py
+│   └── test_idempotency.py
 ├── utils/
 │   └── token.py
 ├── celery_app.py
