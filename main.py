@@ -197,6 +197,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Idempotency-Key"],
 )
 
 # Register API Routers
@@ -219,6 +220,20 @@ except Exception as e:
         f"[Database Warning] Table creation skipped or failed on startup: {e}"
     )
 
+# Redis Startup Verification
+try:
+    from redis_client import redis_client
+    pong, connected = redis_client.ping()
+    if connected:
+        logger.info("[REDIS] Successfully connected to Redis server (PONG)")
+    else:
+        logger.warning(
+            f"[REDIS WARNING] Connection unavailable or limit reached ({pong}). Running in Database Fallback mode."
+        )
+except Exception as e:
+    logger.warning(f"[REDIS WARNING] Connection check error on startup: {e}")
+
+
 
 @app.get(
     "/",
@@ -232,23 +247,58 @@ def home() -> dict[str, str]:
     return {"message": "E-KART Backend Running"}
 
 
+from dependencies.idempotency import get_optional_idempotency_key
+from services.idempotency_service import IdempotencyService, generate_request_hash
+
+
 @app.post(
     "/create-order",
     summary="Create Razorpay Payment Order (Legacy)",
-    description="Legacy endpoint for initializing a Razorpay payment order for checkout.",
+    description="Legacy endpoint for initializing a Razorpay payment order for checkout. Supports optional Idempotency-Key header.",
     response_description="Razorpay order dictionary containing order ID and amount in paise",
     tags=["Legacy"],
 )
-def create_order(data: OrderRequest) -> dict[str, Any]:
-    """Legacy endpoint for creating Razorpay payment orders."""
-    order = client.order.create(
-        {
-            "amount": data.amount * 100,
-            "currency": "INR",
-            "payment_capture": 1,
-        }
-    )
-    return order
+def create_order(
+    data: OrderRequest,
+    db: Session = Depends(get_db),
+    idempotency_key: str | None = Depends(get_optional_idempotency_key),
+) -> dict[str, Any]:
+    """Legacy endpoint for creating Razorpay payment orders idempotently."""
+    req_hash = generate_request_hash(data.model_dump() if hasattr(data, "model_dump") else data.dict())
+
+    if idempotency_key:
+        cached_response, _ = IdempotencyService.check_idempotency(
+            db=db,
+            idempotency_key=idempotency_key,
+            endpoint="/create-order",
+            request_hash=req_hash,
+        )
+        if cached_response:
+            return cached_response
+
+    try:
+        order = client.order.create(
+            {
+                "amount": data.amount * 100,
+                "currency": "INR",
+                "payment_capture": 1,
+            }
+        )
+
+        if idempotency_key:
+            IdempotencyService.save_idempotency_response(
+                db=db,
+                idempotency_key=idempotency_key,
+                status_code=200,
+                response_body=order,
+                request_hash=req_hash,
+            )
+
+        return order
+    except Exception:
+        if idempotency_key:
+            IdempotencyService.mark_failed(db=db, idempotency_key=idempotency_key)
+        raise
 
 
 @app.get(
@@ -270,3 +320,4 @@ def get_users(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
         }
         for user in users
     ]
+

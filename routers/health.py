@@ -80,3 +80,45 @@ def health_check(
                 "error": str(e),
             },
         )
+
+
+@router.get(
+    "/health/redis",
+    summary="Redis Cache Health Check",
+    description="Verify Redis server connection, ping status, and caching mode.",
+    response_description="Redis health status JSON payload",
+    tags=["Health"],
+    responses={
+        200: {
+            "description": "Redis operational status.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "redis_connected": True,
+                        "ping": "PONG",
+                        "cache": "working",
+                    }
+                }
+            },
+        }
+    },
+)
+@router.get("/redis/health", tags=["Health"], include_in_schema=False)
+def redis_health_check() -> dict[str, Any]:
+    """Check Redis connectivity and operational status."""
+    from redis_client import redis_client
+
+    pong, connected = redis_client.ping()
+    if connected:
+        return {
+            "redis_connected": True,
+            "ping": "PONG",
+            "cache": "working",
+        }
+    return {
+        "redis_connected": False,
+        "ping": None,
+        "cache": "fallback_db",
+        "details": pong,
+    }
+

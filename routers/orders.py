@@ -17,8 +17,11 @@ from sqlalchemy.orm import Session
 from constants.app_constants import LOW_STOCK_THRESHOLD
 from db.session import get_db
 from dependencies.auth import get_current_user
+from dependencies.idempotency import get_idempotency_key
 from models import Cart, Order, OrderItem, User
 from redis_client import redis_client
+from services.idempotency_service import IdempotencyService, generate_request_hash
+from services.order_service import create_order_from_cart
 from tasks.email_tasks import (
     send_low_stock_alert,
     send_order_cancelled,
@@ -41,82 +44,52 @@ router = APIRouter()
     tags=["Orders"],
     responses={
         200: {"description": "Order placed successfully."},
-        400: {"description": "Cart is empty."},
+        400: {"description": "Cart is empty or Idempotency-Key header is missing/invalid."},
         401: {"description": "Unauthorized."},
+        409: {"description": "Concurrent request with this Idempotency-Key in progress."},
     },
 )
 def checkout(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    idempotency_key: str = Depends(get_idempotency_key),
 ) -> dict[str, Any]:
-    """Process order checkout from user's current shopping cart."""
-    cart_items = db.query(Cart).filter(Cart.user_id == current_user.id).all()
+    """Process order checkout from user's current shopping cart with idempotency protection."""
+    # Generate stable request hash for user checkout
+    req_hash = generate_request_hash({"user_id": current_user.id, "endpoint": "/checkout"})
 
-    if not cart_items:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "success": False,
-                "message": "Cart is empty. Please add items to your cart before checking out.",
-            },
-        )
-
-    total_price = sum(item.product.price * item.quantity for item in cart_items)
-
-    new_order = Order(
+    # Check Idempotency Key first
+    cached_response, _ = IdempotencyService.check_idempotency(
+        db=db,
+        idempotency_key=idempotency_key,
+        endpoint="/checkout",
+        request_hash=req_hash,
         user_id=current_user.id,
-        total_price=total_price,
-        status="PROCESSING",
     )
+    if cached_response:
+        return cached_response
 
-    db.add(new_order)
-    db.commit()
-    db.refresh(new_order)
-
-    for item in cart_items:
-        order_item = OrderItem(
-            order_id=new_order.id,
-            product_id=item.product_id,
-            quantity=item.quantity,
+    try:
+        result_payload = create_order_from_cart(
+            db=db, current_user=current_user, background_tasks=background_tasks
         )
-        db.add(order_item)
 
-        prod = item.product
-        if prod and hasattr(prod, "stock") and prod.stock is not None:
-            prod.stock = max(0, prod.stock - item.quantity)
-            db.commit()
-            if prod.stock < LOW_STOCK_THRESHOLD:
-                try:
-                    background_tasks.add_task(
-                        send_low_stock_alert, prod.id, prod.title, prod.stock
-                    )
-                except Exception as e:
-                    logger.warning(f"[Low Stock Alert Warning]: {e}")
+        # Save Idempotency response
+        IdempotencyService.save_idempotency_response(
+            db=db,
+            idempotency_key=idempotency_key,
+            status_code=200,
+            response_body=result_payload,
+            request_hash=req_hash,
+        )
 
-    db.commit()
+        return result_payload
 
-    db.query(Cart).filter(Cart.user_id == current_user.id).delete(
-        synchronize_session=False
-    )
-    db.commit()
+    except Exception:
+        IdempotencyService.mark_failed(db=db, idempotency_key=idempotency_key)
+        raise
 
-    try:
-        redis_client.delete(f"cart:user:{current_user.id}")
-    except Exception as e:
-        logger.warning(f"Redis cache clear warning: {e}")
-
-    try:
-        background_tasks.add_task(send_order_confirmation, new_order.id)
-    except Exception as e:
-        logger.warning(f"[Order Confirmation Email Queue Warning]: {e}")
-
-    return {
-        "message": "Order placed successfully",
-        "order_id": new_order.id,
-        "total_price": total_price,
-        "status": "PROCESSING",
-    }
 
 
 @router.get(

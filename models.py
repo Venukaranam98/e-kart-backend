@@ -2,7 +2,16 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.orm import relationship
 
 from db.session import Base
@@ -149,3 +158,22 @@ class Wishlist(Base):
 
     user = relationship("User", back_populates="wishlist_items")
     product = relationship("Product", back_populates="wishlist_items")
+
+
+class IdempotencyRecord(Base):
+    """Database entity storing processed request/response payloads for idempotency key validation."""
+
+    __tablename__ = "idempotency_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    idempotency_key = Column(String(255), unique=True, index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    endpoint = Column(String(255), nullable=False)
+    request_hash = Column(String(64), nullable=False)
+    response_status = Column(Integer, nullable=True)
+    response_body = Column(Text, nullable=True)
+    status = Column(String(20), default="PROCESSING", nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False, index=True)
+
+    user = relationship("User")

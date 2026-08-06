@@ -1,14 +1,18 @@
 """User address management router endpoints."""
 
-from typing import Any
-
 from fastapi import APIRouter, Depends, HTTPException, Path, status
 from sqlalchemy.orm import Session
 
 from db.session import get_db
 from dependencies.auth import get_current_user
 from models import Address, User
-from schemas import AddressSchema
+from schemas import (
+    AddressCreateResponse,
+    AddressDeleteResponse,
+    AddressResponse,
+    AddressSchema,
+    AddressUpdateResponse,
+)
 
 router = APIRouter(tags=["Addresses"])
 
@@ -17,6 +21,7 @@ router = APIRouter(tags=["Addresses"])
     "/address",
     summary="Save Shipping Address",
     description="Save a new delivery address for the authenticated user.",
+    response_model=AddressCreateResponse,
     response_description="Created address object",
     tags=["Addresses"],
     responses={
@@ -28,7 +33,7 @@ def save_address(
     address: AddressSchema,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> dict[str, Any]:
+) -> AddressCreateResponse:
     """Save a new shipping address for current user."""
     new_address = Address(
         user_id=current_user.id,
@@ -43,13 +48,14 @@ def save_address(
     db.commit()
     db.refresh(new_address)
 
-    return {"message": "Address saved", "address": new_address}
+    return AddressCreateResponse(message="Address saved", address=AddressResponse.model_validate(new_address))
 
 
 @router.get(
     "/address",
     summary="Get User Addresses",
     description="Retrieve all saved delivery addresses for the authenticated user.",
+    response_model=list[AddressResponse],
     response_description="Array of user address objects",
     tags=["Addresses"],
     responses={
@@ -60,16 +66,17 @@ def save_address(
 def get_addresses(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> list[Any]:
+) -> list[AddressResponse]:
     """Fetch all shipping addresses for current user."""
     addresses = db.query(Address).filter(Address.user_id == current_user.id).all()
-    return addresses
+    return [AddressResponse.model_validate(addr) for addr in addresses]
 
 
 @router.put(
     "/address/{address_id}",
     summary="Update Address",
     description="Modify an existing delivery address by ID.",
+    response_model=AddressUpdateResponse,
     response_description="Updated address object",
     tags=["Addresses"],
     responses={
@@ -85,7 +92,7 @@ def update_address(
     address: AddressSchema = ...,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> dict[str, Any]:
+) -> AddressUpdateResponse:
     """Update an existing shipping address."""
     existing_address = (
         db.query(Address)
@@ -108,13 +115,14 @@ def update_address(
     db.commit()
     db.refresh(existing_address)
 
-    return {"message": "Address updated", "address": existing_address}
+    return AddressUpdateResponse(message="Address updated", address=AddressResponse.model_validate(existing_address))
 
 
 @router.delete(
     "/address/{address_id}",
     summary="Delete Address",
     description="Remove a delivery address record by ID.",
+    response_model=AddressDeleteResponse,
     response_description="Deletion status message",
     tags=["Addresses"],
     responses={
@@ -129,7 +137,7 @@ def delete_address(
     ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> dict[str, Any]:
+) -> AddressDeleteResponse:
     """Delete a shipping address by ID."""
     existing_address = (
         db.query(Address)
@@ -145,4 +153,4 @@ def delete_address(
     db.delete(existing_address)
     db.commit()
 
-    return {"message": "Address deleted"}
+    return AddressDeleteResponse(message="Address deleted")

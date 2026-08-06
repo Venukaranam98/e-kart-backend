@@ -299,6 +299,48 @@ class AddressSchema(BaseModel):
     )
 
 
+class AddressResponse(BaseModel):
+    """Schema representing saved user shipping address."""
+
+    id: int = Field(..., description="Unique address record ID", example=1)
+    full_name: str = Field(..., description="Recipient's full name", example="John Doe")
+    phone: str = Field(..., description="Recipient's phone number", example="9876543210")
+    address_line: str = Field(
+        ..., description="House No., Building, Street", example="42 Tech Park Avenue"
+    )
+    city: str = Field(..., description="City name", example="Bengaluru")
+    state: str = Field(..., description="State name", example="Karnataka")
+    pincode: str = Field(..., description="6-digit PIN code", example="560001")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AddressCreateResponse(BaseModel):
+    """Response wrapper for address creation."""
+
+    message: str = Field(default="Address saved", description="Status message")
+    address: AddressResponse
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AddressUpdateResponse(BaseModel):
+    """Response wrapper for address update."""
+
+    message: str = Field(default="Address updated", description="Status message")
+    address: AddressResponse
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AddressDeleteResponse(BaseModel):
+    """Response wrapper for address deletion."""
+
+    message: str = Field(default="Address deleted", description="Status message")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class AdminDashboardResponse(BaseModel):
     """Response schema for administrative metrics overview."""
 
@@ -423,3 +465,12 @@ class OrderRequest(BaseModel):
             }
         }
     )
+
+
+class PaymentVerifyRequest(BaseModel):
+    """Schema for verifying Razorpay payment signature."""
+
+    razorpay_order_id: str = Field(..., description="Razorpay Order ID")
+    razorpay_payment_id: str = Field(..., description="Razorpay Payment ID")
+    razorpay_signature: str = Field(..., description="Razorpay HMAC SHA256 Signature")
+

@@ -27,3 +27,7 @@ ORDER_STATUS_CANCELLED = "CANCELLED"
 # Default Pagination
 DEFAULT_PAGE = 1
 DEFAULT_LIMIT = 5
+
+# Idempotency Constants
+IDEMPOTENCY_EXPIRE_HOURS = int(os.getenv("IDEMPOTENCY_EXPIRE_HOURS", "24"))
+
