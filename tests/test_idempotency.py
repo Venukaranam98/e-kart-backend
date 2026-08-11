@@ -1,5 +1,3 @@
-"""Comprehensive Pytest test suite for backend Idempotency implementation."""
-
 import os
 import uuid
 import pytest
