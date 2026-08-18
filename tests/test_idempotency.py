@@ -11,7 +11,6 @@ from models import Cart, Product, User
 from redis_client import redis_client
 from services.idempotency_service import IdempotencyService, generate_request_hash
 
-# Set test database URL
 TEST_SQLALCHEMY_DATABASE_URL = "sqlite:///./test_idempotency.db"
 
 engine = create_engine(
@@ -38,7 +37,6 @@ def setup_database():
     Base.metadata.create_all(bind=engine)
     db = TestingSessionLocal()
 
-    # Seed test user and product
     test_user = User(
         username="testuser_idem",
         email="testuser_idem@example.com",
@@ -58,7 +56,6 @@ def setup_database():
     db.refresh(test_user)
     db.refresh(test_product)
 
-    # Seed cart item
     cart_item = Cart(
         user_id=test_user.id,
         product_id=test_product.id,
