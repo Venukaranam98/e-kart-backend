@@ -1,5 +1,3 @@
-"""Pytest suite verifying Pydantic v2 serialization for Address endpoints."""
-
 import os
 import pytest
 from fastapi.testclient import TestClient
