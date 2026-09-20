@@ -83,7 +83,7 @@ def create_product(
 @router.get(
     "/products",
     summary="List Products (Paginated)",
-    description="Retrieve catalog products using page and limit parameters. Uses Redis Cache-Aside pattern (1 hour expiration).",
+    description="Retrieve catalog products using page, limit, and optional category parameters. Uses Redis Cache-Aside pattern (1 hour expiration).",
     response_description="Paginated array of product objects",
     tags=["Products"],
     responses={200: {"description": "List of product objects returned successfully."}},
@@ -93,10 +93,17 @@ def get_products(
     limit: int = Query(
         5, description="Number of products per page", example=5, ge=1, le=100
     ),
+    category: str | None = Query(
+        None, description="Category filter name (e.g. Mobiles, Laptops)", example="Mobiles"
+    ),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Fetch paginated products list with Redis caching."""
-    cache_key = f"products:page:{page}:limit:{limit}"
+    """Fetch paginated products list with optional category filtering and Redis caching."""
+    cache_key = (
+        f"products:page:{page}:limit:{limit}:category:{category.lower()}"
+        if category and category.strip()
+        else f"products:page:{page}:limit:{limit}"
+    )
     cached_products = redis_client.get(cache_key)
 
     if cached_products:
@@ -105,8 +112,12 @@ def get_products(
 
     logger.info("Products cache miss")
     skip = (page - 1) * limit
+    query = db.query(Product)
+    if category and category.strip() and category.lower() != "all":
+        query = query.filter(Product.category.ilike(category.strip()))
+
     products = (
-        db.query(Product).order_by(asc(Product.id)).offset(skip).limit(limit).all()
+        query.order_by(asc(Product.id)).offset(skip).limit(limit).all()
     )
 
     response = {
@@ -119,6 +130,7 @@ def get_products(
 
     redis_client.set(cache_key, json.dumps(response), ex=3600)
     return response
+
 
 
 @router.get(
