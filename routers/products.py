@@ -61,11 +61,12 @@ def create_product(
     db.commit()
     db.refresh(new_product)
 
-    for key in redis_client.scan_iter("product:*"):
-        redis_client.delete(key)
-
-    for key in redis_client.scan_iter("products:*"):
-        redis_client.delete(key)
+    redis_client.delete(
+        f"product:{new_product.id}",
+        "products:page:1:limit:10",
+        "products:page:1:limit:12",
+        "products:page:1:limit:100",
+    )
 
     return {
         "success": True,
@@ -373,10 +374,12 @@ def update_product(
     db.refresh(product)
 
     try:
-        for key in redis_client.scan_iter("product:*"):
-            redis_client.delete(key)
-        for key in redis_client.scan_iter("products:*"):
-            redis_client.delete(key)
+        redis_client.delete(
+            f"product:{product_id}",
+            "products:page:1:limit:10",
+            "products:page:1:limit:12",
+            "products:page:1:limit:100",
+        )
     except Exception as e:
         logger.warning(f"Redis cache clear warning: {e}")
 
@@ -418,10 +421,12 @@ def delete_product(
     db.delete(product)
     db.commit()
 
-    for key in redis_client.scan_iter("product:*"):
-        redis_client.delete(key)
-    for key in redis_client.scan_iter("products:*"):
-        redis_client.delete(key)
+    redis_client.delete(
+        f"product:{product_id}",
+        "products:page:1:limit:10",
+        "products:page:1:limit:12",
+        "products:page:1:limit:100",
+    )
 
     return {"success": True, "message": "Product deleted successfully"}
 
