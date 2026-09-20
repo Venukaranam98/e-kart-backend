@@ -15,8 +15,11 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-SECRET_KEY = os.getenv("SECRET_KEY", "")
+SECRET_KEY = os.getenv("SECRET_KEY", "ekart_default_super_secret_key_32_bytes_long_minimum!!")
+if len(SECRET_KEY) < 32:
+    SECRET_KEY = SECRET_KEY.ljust(32, "!")
 ALGORITHM = JWT_ALGORITHM
+
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
