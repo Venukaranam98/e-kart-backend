@@ -1,5 +1,3 @@
-"""Safe Redis client wrapper with graceful database fallback and detailed logging."""
-
 import logging
 import os
 from collections.abc import Iterable

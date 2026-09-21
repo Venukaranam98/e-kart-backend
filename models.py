@@ -1,5 +1,3 @@
-"""SQLAlchemy database models for E-Kart application."""
-
 from datetime import datetime
 
 from sqlalchemy import (
