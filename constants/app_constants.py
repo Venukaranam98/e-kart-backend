@@ -1,5 +1,3 @@
-"""Application constant definitions for E-Kart backend."""
-
 import os
 
 # JWT & Authentication Constants
