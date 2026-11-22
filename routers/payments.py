@@ -45,10 +45,12 @@ webhook_secret = os.getenv("RAZORPAY_WEBHOOK_SECRET", "default_webhook_secret")
 def create_payment_order(
     data: OrderRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
     idempotency_key: str = Depends(get_idempotency_key),
 ) -> dict[str, Any]:
     """Create a new Razorpay payment order idempotently."""
-    req_hash = generate_request_hash(data.model_dump() if hasattr(data, "model_dump") else data.dict())
+    raw_dict = data.model_dump() if hasattr(data, "model_dump") else data.dict()
+    req_hash = generate_request_hash({"user_id": current_user.id, **raw_dict})
 
     # Step 1: Check Idempotency Key
     cached_response, _ = IdempotencyService.check_idempotency(
@@ -56,6 +58,7 @@ def create_payment_order(
         idempotency_key=idempotency_key,
         endpoint="/create-payment-order",
         request_hash=req_hash,
+        user_id=current_user.id,
     )
     if cached_response:
         logger.info(f"[Payments] Returning previous Razorpay order for key: {idempotency_key}")

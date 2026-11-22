@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from constants.app_constants import LOW_STOCK_THRESHOLD
 from db.session import get_db
-from dependencies.auth import get_current_user
+from dependencies.auth import get_current_admin, get_current_user
 from dependencies.idempotency import get_idempotency_key
 from models import Cart, Order, OrderItem, User
 from redis_client import redis_client
@@ -178,6 +178,7 @@ def update_order_status(
         example="SHIPPED",
     ),
     db: Session = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
 ) -> dict[str, Any]:
     """Update order status and trigger customer email notifications."""
     order = db.query(Order).filter(Order.id == order_id).first()

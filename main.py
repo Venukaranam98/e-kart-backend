@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 import models
 from db.session import engine, get_db
+from dependencies.auth import get_current_admin, get_current_user
 from models import User
 from routers import (
     address,
@@ -261,10 +262,12 @@ from services.idempotency_service import IdempotencyService, generate_request_ha
 def create_order(
     data: OrderRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
     idempotency_key: str | None = Depends(get_optional_idempotency_key),
 ) -> dict[str, Any]:
     """Legacy endpoint for creating Razorpay payment orders idempotently."""
-    req_hash = generate_request_hash(data.model_dump() if hasattr(data, "model_dump") else data.dict())
+    raw_dict = data.model_dump() if hasattr(data, "model_dump") else data.dict()
+    req_hash = generate_request_hash({"user_id": current_user.id, **raw_dict})
 
     if idempotency_key:
         cached_response, _ = IdempotencyService.check_idempotency(
@@ -272,6 +275,7 @@ def create_order(
             idempotency_key=idempotency_key,
             endpoint="/create-order",
             request_hash=req_hash,
+            user_id=current_user.id,
         )
         if cached_response:
             return cached_response
@@ -308,7 +312,10 @@ def create_order(
     response_description="List of registered user records",
     tags=["Legacy"],
 )
-def get_users(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+def get_users(
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+) -> list[dict[str, Any]]:
     """Legacy public endpoint returning registered user list."""
     users = db.query(User).all()
     return [
