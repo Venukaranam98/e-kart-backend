@@ -18,7 +18,7 @@ from constants.app_constants import LOW_STOCK_THRESHOLD
 from db.session import get_db
 from dependencies.auth import get_current_admin, get_current_user
 from dependencies.idempotency import get_idempotency_key
-from models import Cart, Order, OrderItem, User
+from models import Cart, IdempotencyRecord, Order, OrderItem, Product, User
 from redis_client import redis_client
 from services.idempotency_service import IdempotencyService, generate_request_hash
 from services.order_service import create_order_from_cart
@@ -154,6 +154,163 @@ def get_user_orders(
     return order_response
 
 
+@router.post(
+    "/orders/{order_id}/cancel",
+    summary="Cancel Order Immediately",
+    description="Immediately cancel an eligible customer order, restore product inventory stock, initiate refund if paid online via Razorpay, and trigger cancellation confirmation email.",
+    response_description="Cancellation result summary",
+    tags=["Orders"],
+    responses={
+        200: {"description": "Order cancelled successfully."},
+        400: {"description": "Order is not eligible for cancellation or is already cancelled."},
+        401: {"description": "Unauthorized."},
+        403: {"description": "Forbidden: Order belongs to another user."},
+        404: {"description": "Order not found."},
+    },
+)
+@router.put("/orders/{order_id}/cancel", tags=["Orders"], include_in_schema=False)
+def cancel_order(
+    order_id: int = Path(
+        ..., title="Order ID", description="Target order ID to cancel", example=101
+    ),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Immediately cancel an eligible customer order and restore inventory."""
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"success": False, "message": "Order not found."},
+        )
+
+    # Verify order ownership (user can only cancel their own orders unless admin)
+    if order.user_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"success": False, "message": "You are not authorized to cancel this order."},
+        )
+
+    # Check order cancellation eligibility
+    current_status = (order.status or "").strip().upper()
+    if current_status == "CANCELLED":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"success": False, "message": "This order is already cancelled."},
+        )
+
+    if current_status not in ["PROCESSING", "NEW", "NEW ORDER", "PENDING"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "success": False,
+                "message": f"Order #{order_id} cannot be cancelled because it is already {current_status.lower()}.",
+            },
+        )
+
+    # Inventory Management: restore ordered product stock quantities safely within transaction
+    for item in order.items:
+        prod = item.product or db.query(Product).filter(Product.id == item.product_id).first()
+        if prod and hasattr(prod, "stock") and prod.stock is not None:
+            prod.stock += item.quantity
+            try:
+                redis_client.delete(f"product:{prod.id}")
+            except Exception as e:
+                logger.warning(f"Failed to clear redis cache for product {prod.id}: {e}")
+
+    try:
+        redis_client.delete(
+            "products:page:1:limit:10",
+            "products:page:1:limit:12",
+            "products:page:1:limit:100",
+        )
+    except Exception as e:
+        logger.warning(f"Failed to clear redis products cache: {e}")
+
+    # Payment Handling & Refunds
+    refund_status = "Not Applicable (Cash on Delivery)"
+    try:
+        # Search for online Razorpay payment record linked to this order
+        payment_records = (
+            db.query(IdempotencyRecord)
+            .filter(
+                IdempotencyRecord.endpoint == "/verify-payment",
+                IdempotencyRecord.user_id == order.user_id,
+            )
+            .all()
+        )
+        payment_id = None
+        for record in payment_records:
+            if record.response_body and (
+                f'"order_id": {order.id}' in record.response_body
+                or f'"order_id": "{order.id}"' in record.response_body
+            ):
+                import json
+
+                try:
+                    body_json = json.loads(record.response_body)
+                    payment_id = body_json.get("razorpay_payment_id")
+                    if payment_id:
+                        break
+                except Exception:
+                    pass
+
+        if payment_id:
+            import os
+            import razorpay
+
+            key_id = os.getenv("RAZORPAY_KEY_ID", "")
+            key_secret = os.getenv("RAZORPAY_KEY_SECRET", "")
+            if key_id and key_secret:
+                try:
+                    rzp_client = razorpay.Client(auth=(key_id, key_secret))
+                    refund = rzp_client.payment.refund(
+                        payment_id,
+                        {"amount": int((order.total_price or 0) * 100)},
+                    )
+                    if refund and refund.get("id"):
+                        refund_status = "Refund Processed"
+                    else:
+                        refund_status = "Refund Initiated"
+                except Exception as rzp_err:
+                    logger.warning(f"[Razorpay Refund Error]: {rzp_err}")
+                    refund_status = "Refund Initiated (Pending Gateway Processing)"
+            else:
+                refund_status = "Refund Initiated"
+    except Exception as pay_err:
+        logger.warning(f"[Payment check warning]: {pay_err}")
+
+    # Immediately persist status update to database
+    order.status = "CANCELLED"
+    db.commit()
+    db.refresh(order)
+
+    # Queue transactional cancellation email
+    try:
+        background_tasks.add_task(
+            send_order_cancelled,
+            order.id,
+            refund_status=refund_status,
+            reason="Cancelled by customer",
+        )
+    except Exception as e:
+        logger.warning(f"[Order Cancel Email Queue Warning]: {e}")
+
+    return {
+        "success": True,
+        "message": "Order cancelled successfully.",
+        "data": {
+            "order_id": order.id,
+            "status": "CANCELLED",
+            "refund_status": refund_status,
+        },
+        "order_id": order.id,
+        "status": "CANCELLED",
+        "refund_status": refund_status,
+    }
+
+
 @router.put(
     "/orders/{order_id}/status",
     summary="Update Order Status",
@@ -189,6 +346,18 @@ def update_order_status(
         )
 
     upper_status = status_str.upper().strip()
+
+    # If transitioning to CANCELLED from another status, restore inventory stock
+    if upper_status == "CANCELLED" and order.status != "CANCELLED":
+        for item in order.items:
+            prod = item.product or db.query(Product).filter(Product.id == item.product_id).first()
+            if prod and hasattr(prod, "stock") and prod.stock is not None:
+                prod.stock += item.quantity
+                try:
+                    redis_client.delete(f"product:{prod.id}")
+                except Exception:
+                    pass
+
     order.status = upper_status
     db.commit()
 

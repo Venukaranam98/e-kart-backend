@@ -161,6 +161,14 @@ def update_admin_order_status(
         )
 
     upper_status = status_str.upper().strip()
+
+    # If transitioning to CANCELLED from another status, restore inventory stock
+    if upper_status == "CANCELLED" and order.status != "CANCELLED":
+        for item in order.items:
+            prod = item.product or db.query(Product).filter(Product.id == item.product_id).first()
+            if prod and hasattr(prod, "stock") and prod.stock is not None:
+                prod.stock += item.quantity
+
     order.status = upper_status
     db.commit()
 
